@@ -42,6 +42,7 @@ struct config {
     int frame_limit;
     int quiet;
     int useextpipe; /* ext_pipe on or off */
+    int smooth_video;
     const char *extpipe; /* full Command-line for pipe -- must accept YUV420P images  */
     const char *picture_type;
     int noise;

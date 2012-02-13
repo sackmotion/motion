@@ -237,6 +237,7 @@ struct images;
 struct image_data {
     unsigned char *image;
     int diffs;
+    struct timeval tv;
     time_t timestamp;           /* Timestamp when image was captured */
     struct tm timestamp_tm;
     int shot;                   /* Sub second timestamp count */
@@ -351,6 +352,7 @@ struct context {
 
     struct config conf;
     struct images imgs;
+    unsigned char *previmg;
     struct trackoptions track;
     struct netcam_context *netcam;
     struct image_data *current_image;        /* Pointer to a structure where the image, diffs etc is stored */
@@ -389,6 +391,11 @@ struct context {
     struct tm *currenttime_tm;
     struct tm *eventtime_tm;
 
+    int gapfix;				     /* set to 1 if gap not fulfilled; used for output */
+    struct timeval tv;
+    struct timeval prevtv;                  /* previous pic tv.. needs to stick around */
+    struct timeval prevmotiontv;            /* previous pic detection tv.. needs to stick around */
+    time_t leftovers;			    /* leftover microseconds */
     time_t currenttime;
     time_t lasttime;
     time_t eventtime;
@@ -428,6 +435,8 @@ struct context {
 #endif
 
     int movie_fps;
+    time_t usinterval;                 /* microsecond interval, 1000000 / movie_fps */
+
     char newfilename[PATH_MAX];
     char extpipefilename[PATH_MAX];
     int movie_last_shot;

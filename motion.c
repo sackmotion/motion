@@ -556,60 +556,51 @@ static void process_image_ring(struct context *cnt, unsigned int max_images)
                           cnt->imgs.width, t, cnt->conf.text_double);
             }
 
-            /* Output the picture to jpegs and ffmpeg */
-            event(cnt, EVENT_IMAGE_DETECTED,
-                  cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, NULL, NULL, 
-                  &cnt->imgs.image_ring[cnt->imgs.image_ring_out].timestamp_tm);
+            //smoothvideo: payne 10/15/2008
+            //located in two places
+              /* process this only if we're outputting to a movie */
+              if (cnt->conf.smooth_video && (cnt->ffmpeg_output || cnt->conf.useextpipe)) {
+                  if (cnt->prevtv.tv_sec > 0) {
+                      time_t elapsedus = ((cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_sec - cnt->prevtv.tv_sec) * 1000000) +
+                                          (cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_usec - cnt->prevtv.tv_usec);
+                      int myinsertnum = ((elapsedus + cnt->leftovers) / cnt->usinterval);
+                      /* the larger loop we're in is only called to process
+                       * motion -- there will be one frame processed later
+                       * REGARDLESS of what we do here, so, account for it */
+                      cnt->leftovers += elapsedus - (cnt->usinterval*(myinsertnum+1));
 
-            /* 
-             * Check if we must add any "filler" frames into movie to keep up fps 
-             * Only if we are recording videos ( ffmpeg or extenal pipe )         
-             */
-            if ((cnt->imgs.image_ring[cnt->imgs.image_ring_out].shot == 0) &&
-#ifdef HAVE_FFMPEG
-                (cnt->ffmpeg_output || (cnt->conf.useextpipe && cnt->extpipe))) {
-#else
-                (cnt->conf.useextpipe && cnt->extpipe)) {
-#endif
-                /* 
-                 * movie_last_shoot is -1 when file is created,
-                 * we don't know how many frames there is in first sec 
-                 */
-                if (cnt->movie_last_shot >= 0) {
-                    if (cnt_list[0]->log_level >= DBG) {
-                        int frames = cnt->movie_fps - (cnt->movie_last_shot + 1);
-                        if (frames > 0) {
-                            char tmp[15];
-                            MOTION_LOG(DBG, TYPE_ALL, NO_ERRNO, "%s: Added %d fillerframes into movie", 
-                                       frames);
-                            sprintf(tmp, "Fillerframes %d", frames);
-                            draw_text(cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, 10, 40, 
-                                      cnt->imgs.width, tmp, cnt->conf.text_double);
+                      if (cnt_list[0]->conf.log_level >= 2)
+                          motion_log(LOG_INFO, 0, "current, prev, fps, us, interval, insertnum, leftovers: "
+                                     "%d.%06ld, %d.%06ld, %d, %d, %d, %d, %d",
+                                     cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_sec,
+                                     cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_usec,
+                                     cnt->prevtv.tv_sec, cnt->prevtv.tv_usec, cnt->movie_fps, elapsedus,
+                                     cnt->usinterval, myinsertnum, cnt->leftovers);
+
+                      while (myinsertnum > 0) {
+                          event(cnt, EVENT_FFMPEG_PUT, cnt->previmg, NULL, NULL,
+                  &cnt->imgs.image_ring[cnt->imgs.image_ring_out].timestamp_tm);
+                          myinsertnum--;
+
+
                         }
+                        }
+                  cnt->prevtv = cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv;
+                  memcpy(cnt->previmg, cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, cnt->imgs.size);
                     }
-                    /* Check how many frames it was last sec */
-                    while ((cnt->movie_last_shot + 1) < cnt->movie_fps) {
-                        /* Add a filler frame into encoder */
+              /* Output the picture to jpegs (if motion), ffmpeg and extpipe (regardless)*/
+              if ((cnt->imgs.image_ring[cnt->imgs.image_ring_out].flags & IMAGE_MOTION) &&
+                  ! (cnt->imgs.image_ring[cnt->imgs.image_ring_out].flags & IMAGE_PRECAP)) {
+                  event(cnt, EVENT_IMAGE_DETECTED,
+                        cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, NULL, NULL,
+                        &cnt->imgs.image_ring[cnt->imgs.image_ring_out].timestamp_tm);
+              } else {
                         event(cnt, EVENT_FFMPEG_PUT,
                               cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, NULL, NULL, 
                               &cnt->imgs.image_ring[cnt->imgs.image_ring_out].timestamp_tm);
-
-                        cnt->movie_last_shot++;
                     }
                 }
-                cnt->movie_last_shot = 0;
-            } else if (cnt->imgs.image_ring[cnt->imgs.image_ring_out].shot != (cnt->movie_last_shot + 1)) {
-                /* We are out of sync! Propably we got motion - no motion - motion */
-                cnt->movie_last_shot = -1;
-            }
 
-            /* 
-             * Save last shot added to movie
-             * only when we not are within first sec 
-             */
-            if (cnt->movie_last_shot >= 0)
-                cnt->movie_last_shot = cnt->imgs.image_ring[cnt->imgs.image_ring_out].shot;
-        }
 
         /* Mark the image as saved */
         cnt->imgs.image_ring[cnt->imgs.image_ring_out].flags |= IMAGE_SAVED;
@@ -673,7 +664,9 @@ static int motion_init(struct context *cnt)
     cnt->currenttime_tm = mymalloc(sizeof(struct tm));
     cnt->eventtime_tm = mymalloc(sizeof(struct tm));
     /* Init frame time */
-    cnt->currenttime = time(NULL);
+    gettimeofday(&cnt->tv, NULL);
+    cnt->currenttime = cnt->tv.tv_sec;
+
     localtime_r(&cnt->currenttime, cnt->currenttime_tm);
 
     cnt->smartmask_speed = 0;
@@ -715,6 +708,10 @@ static int motion_init(struct context *cnt)
                    "Motion only supports width and height modulo 16");
         return -3;
     }
+
+    /* setup cnt->previmg (previous img for ffmpeg streaming) */
+    cnt->previmg = mymalloc(cnt->imgs.size);
+    memset(cnt->previmg, 0x80, cnt->imgs.size);  /* initialize to grey */
 
     image_ring_resize(cnt, 1); /* Create a initial precapture ring buffer with 1 frame */
 
@@ -1067,6 +1064,12 @@ static void motion_cleanup(struct context *cnt)
             sqlite3_close(cnt->database_sqlite3);
 #endif /* HAVE_SQLITE3 */
     }
+
+    /* Cleanup the previmg buffer */
+    if (cnt->previmg) {
+        free(cnt->previmg);
+        cnt->previmg = NULL;
+    }
 }
 
 /**
@@ -1221,7 +1224,9 @@ static void *motion_loop(void *arg)
             image_ring_resize(cnt, frame_buffer_size);
         
         /* Get time for current frame */
-        cnt->currenttime = time(NULL);
+        gettimeofday(&cnt->tv, NULL);
+        cnt->currenttime = cnt->tv.tv_sec;
+
 
         /* 
          * localtime returns static data and is not threadsafe
@@ -1301,6 +1306,7 @@ static void *motion_loop(void *arg)
 
             /* Store time with pre_captured image */
             cnt->current_image->timestamp = cnt->currenttime;
+            cnt->current_image->tv = cnt->tv;
             localtime_r(&cnt->current_image->timestamp, &cnt->current_image->timestamp_tm);
 
             /* Store shot number with pre_captured image */
@@ -1928,11 +1934,57 @@ static void *motion_loop(void *arg)
                      * images get a timestamp from previous event.
                      */
                     cnt->text_event_string[0] = '\0';
+
+		    cnt->gapfix = 0;
+                    if ((cnt->currenttime - cnt->lasttime < cnt->conf.event_gap) && cnt->conf.event_gap > 0) {
+                        cnt->current_image->flags |= (IMAGE_TRIGGER);
+                        cnt->postcap = cnt->conf.post_capture;
+                        motion_detected(cnt, cnt->video_dev, cnt->current_image);
+                        cnt->gapfix = 1;
+                    } else {
+                        /* And, finally again, we reset the prevtv structure. */
+                        cnt->prevtv.tv_sec = 0;
+                        cnt->prevtv.tv_usec = 0;
+                    }
                 }
             }
 
             /* Save/send to movie some images */
             process_image_ring(cnt, 2);
+            /* For movie realtime sync.  code needed here so we don't run into issues
+            with high numbers of queued images, which would slow down processing */
+            if (cnt->conf.smooth_video && (cnt->ffmpeg_output || (cnt->conf.useextpipe))) {
+                /* process this if we're outputting to a movie only.. */
+                if (cnt->prevtv.tv_sec > 0) { /* only run through this block of code if we're in an event --
+                                               minimal processing is KEY =) */
+                    time_t elapsedus = ((cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_sec - cnt->prevtv.tv_sec) * 1000000) +
+                                        (cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_usec - cnt->prevtv.tv_usec);
+                    int myinsertnum = ((elapsedus + cnt->leftovers) / cnt->usinterval);
+
+                    if (myinsertnum > 0) {
+                        cnt->leftovers += elapsedus - (cnt->usinterval*(myinsertnum));
+
+                        if (cnt_list[0]->conf.log_level >= 2)
+                            motion_log(LOG_INFO, 0, "KEEPUP: current, prev, fps, us, interval, insertnum, leftovers: "
+                                       "%d.%06ld, %d.%06ld, %d, %d, %d, %d, %d",
+                                       cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_sec,
+                                       cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_usec,
+                                       cnt->prevtv.tv_sec, cnt->prevtv.tv_usec, cnt->movie_fps, elapsedus,
+                                       cnt->usinterval, myinsertnum, cnt->leftovers);
+
+                        while (myinsertnum > 0) {
+                            event(cnt, EVENT_FFMPEG_PUT, cnt->previmg, NULL, NULL,
+                                  &cnt->imgs.image_ring[cnt->imgs.image_ring_out].timestamp_tm);
+                            myinsertnum--;
+                        }
+
+                        cnt->prevtv = cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv;
+                        memcpy(cnt->previmg, cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, cnt->imgs.size);
+                    }
+                }
+            }
+
+
 
         /***** MOTION LOOP - SETUP MODE CONSOLE OUTPUT SECTION *****/
 
@@ -3219,6 +3271,25 @@ size_t mystrftime(const struct context *cnt, char *s, size_t max, const char *us
                 else
                     ++pos_userformat;
                 break;
+
+            case 'u': // tv_usec -- really "us" for micro time, returns microsecond part
+                      // ux = two decimals
+                switch(*++pos_userformat) {
+                    case 's': // %us, return microseconds (6 digits padded)
+                        sprintf(tempstr, "%06ld",cnt->current_image->tv.tv_usec);
+                        break;
+                    case 'x': // %ux, return microseconds (2 digits padded)
+                        sprintf(tempstr, "%02d",cnt->current_image->tv.tv_usec/10000);
+                        break;
+                    case 'g': // %ug, debugging, gapfix active?
+                        sprintf(tempstr, "%d",cnt->gapfix);
+                        break;
+
+                }
+                if (tempstr[0])  //if %ut or %us
+                    break;
+                else
+                    --pos_userformat;
 
             default: // Any other code is copied with the %-sign
                 *format++ = '%';

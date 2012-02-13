@@ -526,6 +526,8 @@ static void event_new_video(struct context *cnt, int type ATTRIBUTE_UNUSED,
         cnt->movie_fps = 30;
     else if (cnt->movie_fps < 2)
         cnt->movie_fps = 2;
+
+    cnt->usinterval = 1000000 / cnt->movie_fps;  /* less calculations are good... */
 }
 
 #ifdef HAVE_FFMPEG

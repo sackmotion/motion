@@ -1,3 +1,17 @@
 *.log
 .svn/
 *.o
+.depend
+Makefile
+config.h
+config.status
+motion
+motion-dist.conf
+motion.init-Debian
+motion.init-Fedora
+motion.init-FreeBSD.sh
+motion.spec
+thread1.conf
+thread2.conf
+thread3.conf
+thread4.conf
