@@ -353,6 +353,17 @@ config_param config_params[] = {
     print_int
     },
     {
+    "force_framerate",
+    "# Force the number of frames per second set in framerate.\n"
+    "# This is useful for capture cards on busy system where motion\n"
+    "# often failed to detect the correct framerate.\n"
+    "# Valid range: 2-100. Default: 100 (almost no limit).",
+    0,
+    CONF_OFFSET(force_framerate),
+    copy_bool,
+    print_bool
+    },
+    {
     "minimum_frame_time",
     "# Minimum time in seconds between capturing picture frames from the camera.\n"
     "# Default: 0 = disabled - the capture rate is given by the camera framerate.\n"
