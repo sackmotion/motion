@@ -522,10 +522,14 @@ static void event_new_video(struct context *cnt, int type ATTRIBUTE_UNUSED,
     MOTION_LOG(NTC, TYPE_EVENTS, NO_ERRNO, "%s FPS %d",
                cnt->movie_fps);
 
-    if (cnt->movie_fps > 30)
+    if (cnt->conf.force_framerate)
+        cnt->movie_fps = cnt->conf.frame_limit;
+    else if (cnt->movie_fps > 30)
         cnt->movie_fps = 30;
     else if (cnt->movie_fps < 2)
         cnt->movie_fps = 2;
+
+    cnt->usinterval = 1000000 / cnt->movie_fps;  /* less calculations are good... */
 }
 
 #ifdef HAVE_FFMPEG

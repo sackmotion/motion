@@ -79,6 +79,7 @@ struct config conf_template = {
     ffmpeg_output:                  0,
     extpipe:                        NULL,
     useextpipe:                     0,
+    smooth_video:                   0,
     ffmpeg_output_debug:            0,
     ffmpeg_bps:                     DEF_FFMPEG_BPS,
     ffmpeg_vbr:                     DEF_FFMPEG_VBR,
@@ -350,6 +351,17 @@ config_param config_params[] = {
     CONF_OFFSET(frame_limit),
     copy_int,
     print_int
+    },
+    {
+    "force_framerate",
+    "# Force the number of frames per second set in framerate.\n"
+    "# This is useful for capture cards on busy system where motion\n"
+    "# often failed to detect the correct framerate.\n"
+    "# Valid range: 2-100. Default: 100 (almost no limit).",
+    0,
+    CONF_OFFSET(force_framerate),
+    copy_bool,
+    print_bool
     },
     {
     "minimum_frame_time",
@@ -801,6 +813,19 @@ config_param config_params[] = {
     CONF_OFFSET(extpipe),
     copy_string,
     print_string
+    },
+    {
+    "smooth_video",
+    "\n############################################################\n"
+    "# Normally, video is recorded as __precap+motion+postcap____\n"
+    "# This option changes the default behavior of the video \n"
+    "# capturing so that it is __precap+event-start-->event-end__ \n"
+    "############################################################\n"
+    "# Use smooth_video on to enable this feature. \n",
+    0,
+    CONF_OFFSET(smooth_video),
+    copy_bool,
+    print_bool
     },
     {
     "snapshot_interval",
