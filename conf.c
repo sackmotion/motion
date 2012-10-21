@@ -751,6 +751,7 @@ config_param config_params[] = {
     "# ffv1 - FF video codec 1 for Lossless Encoding ( experimental )\n"
     "# mov - QuickTime ( testing )\n"
     "# ogg - Ogg/Theora ( testing )",
+    "# web - webm ( testing )",
     0,
     CONF_OFFSET(ffmpeg_video_codec),
     copy_string,
