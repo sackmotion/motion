@@ -84,9 +84,6 @@ struct config conf_template = {
     ffmpeg_bps:                     DEF_FFMPEG_BPS,
     ffmpeg_vbr:                     DEF_FFMPEG_VBR,
     ffmpeg_video_codec:             DEF_FFMPEG_CODEC,
-#ifdef HAVE_SDL
-    sdl_threadnr:                   0,
-#endif
     ipv6_enabled:                   0,
     stream_port:                    0,
     stream_quality:                 50,
@@ -104,9 +101,6 @@ struct config conf_template = {
     tuner_number:                   0,
     timelapse:                      0,
     timelapse_mode:                 DEF_TIMELAPSE_MODE,
-#if (defined(BSD))
-    tuner_device:                   NULL,
-#endif
     video_device:                   VIDEO_DEVICE,
     v4l2_palette:                   DEF_PALETTE,
     vidpipe:                        NULL,
@@ -119,22 +113,6 @@ struct config conf_template = {
     on_event_end:                   NULL,
     mask_file:                      NULL,
     smart_mask_speed:               0,
-#if defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || defined(HAVE_SQLITE3)
-    sql_log_image:                  1,
-    sql_log_snapshot:               1,
-    sql_log_movie:                  0,
-    sql_log_timelapse:              0,
-    sql_query:                      DEF_SQL_QUERY,
-    database_type:                  NULL,
-    database_dbname:                NULL,
-    database_host:                  "localhost",
-    database_user:                  NULL,
-    database_password:              NULL,
-    database_port:                  0,
-#ifdef HAVE_SQLITE3
-    sqlite3_db:                     NULL,
-#endif
-#endif /* defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || define(HAVE_SQLITE3) */
     on_picture_save:                NULL,
     on_motion_detected:             NULL,
     on_area_detected:               NULL,
@@ -687,7 +665,6 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-#ifdef HAVE_FFMPEG
     {
     "ffmpeg_output_movies",
     "\n############################################################\n"
@@ -777,20 +754,6 @@ config_param config_params[] = {
     copy_bool,
     print_bool
     },
-#endif /* HAVE_FFMPEG */
-#ifdef HAVE_SDL
-     {
-    "sdl_threadnr",
-    "\n############################################################\n"
-    "# SDL Window\n"
-    "############################################################\n\n"
-    "# Number of motion thread to show in SDL Window (default: 0 = disabled)",
-    1,
-    CONF_OFFSET(sdl_threadnr),
-    copy_int,
-    print_int
-    },
-#endif /* HAVE_SDL */
     {
     "use_extpipe",
     "\n############################################################\n"
@@ -984,7 +947,6 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-#ifdef HAVE_FFMPEG
     {
     "movie_filename",
     "# File path for motion triggered ffmpeg films (movies) relative to target_dir\n"
@@ -1010,7 +972,6 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-#endif /* HAVE_FFMPEG */
     {
     "ipv6_enabled",
     "\n############################################################\n"
@@ -1363,7 +1324,6 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-#ifdef HAVE_FFMPEG
     {
     "on_movie_start",
     "# Command to be executed when a movie file (.mpg|.avi) is created. (default: none)\n"
@@ -1382,7 +1342,6 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-#endif /* HAVE_FFMPEG */
     {
     "on_camera_lost",
     "# Command to be executed when a camera can't be opened or if it is lost\n"
@@ -1395,132 +1354,6 @@ config_param config_params[] = {
     print_string
     },
 
-#if defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || defined(HAVE_SQLITE3)
-    {
-    "sql_log_picture",
-    "\n############################################################\n"
-    "# Common Options for database features.\n"
-    "# Options require the database options to be active also.\n"
-    "############################################################\n\n"
-    "# Log to the database when creating motion triggered image file  (default: on)",
-    0,
-    CONF_OFFSET(sql_log_image),
-    copy_bool,
-    print_bool
-    },
-    {
-    "sql_log_snapshot",
-    "# Log to the database when creating a snapshot image file (default: on)",
-    0,
-    CONF_OFFSET(sql_log_snapshot),
-    copy_bool,
-    print_bool
-    },
-    {
-    "sql_log_movie",
-    "# Log to the database when creating motion triggered movie file (default: off)",
-    0,
-    CONF_OFFSET(sql_log_movie),
-    copy_bool,
-    print_bool
-    },
-    {
-    "sql_log_timelapse",
-    "# Log to the database when creating timelapse movie file (default: off)",
-    0,
-    CONF_OFFSET(sql_log_timelapse),
-    copy_bool,
-    print_bool
-    },
-    {
-    "sql_query",
-    "# SQL query string that is sent to the database\n"
-    "# Use same conversion specifiers has for text features\n"
-    "# Additional special conversion specifiers are\n"
-    "# %n = the number representing the file_type\n"
-    "# %f = filename with full path\n"
-    "# Create tables :\n"
-    "##\n"
-    "# Mysql\n"
-    "# CREATE TABLE security (camera int, filename char(80) not null, frame int, file_type int, time_stamp timestamp(14), event_time_stamp timestamp(14));\n"
-    "#\n"
-    "# Postgresql\n"
-    "# CREATE TABLE security (camera int, filename char(80) not null, frame int, file_type int, time_stamp timestamp without time zone, event_time_stamp timestamp without time zone);\n"
-    "#\n"
-    "# Default value:\n"
-    "# insert into security(camera, filename, frame, file_type, time_stamp, text_event) values('%t', '%f', '%q', '%n', '%Y-%m-%d %T', '%C')",
-    0,
-    CONF_OFFSET(sql_query),
-    copy_string,
-    print_string
-    },
-    {
-    "database_type",
-    "\n############################################################\n"
-    "# Database Options \n"
-    "############################################################\n\n"
-    "# database type : mysql, postgresql, sqlite3 (default : not defined)",
-    0,
-    CONF_OFFSET(database_type),
-    copy_string,
-    print_string
-    },
-    {
-    "database_dbname",
-    "# database to log to (default: not defined)",
-    0,
-    CONF_OFFSET(database_dbname),
-    copy_string,
-    print_string
-    },
-    {
-    "database_host",
-    "# The host on which the database is located (default: not defined)",
-    0,
-    CONF_OFFSET(database_host),
-    copy_string,
-    print_string
-    },
-    {
-    "database_user",
-    "# User account name for database (default: not defined)",
-    0,
-    CONF_OFFSET(database_user),
-    copy_string,
-    print_string
-    },
-    {
-    "database_password",
-    "# User password for database (default: not defined)",
-    0,
-    CONF_OFFSET(database_password),
-    copy_string,
-    print_string
-    },
-    {
-    "database_port",
-    "# Port on which the database is located (default: not defined)\n"
-    "# mysql 3306 , postgresql 5432 (default: not defined)",
-    0,
-    CONF_OFFSET(database_port),
-    copy_int,
-    print_int
-    },
-#ifdef HAVE_SQLITE3
-    {
-    "sqlite3_db",
-    "\n############################################################\n"
-    "# Database Options For SQLite3\n"
-    "############################################################\n\n"
-    "# SQLite3 database to log to (default: not defined)",
-    0,
-    CONF_OFFSET(sqlite3_db),
-    copy_string,
-    print_string
-    },
-#endif /* HAVE_SQLITE3 */
-
-#endif /* defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || defined(HAVE_SQLITE3) */
     {
     "video_pipe",
     "\n############################################################\n"

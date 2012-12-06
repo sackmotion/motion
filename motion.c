@@ -6,7 +6,7 @@
  *    See also the file 'COPYING'.
  *
  */
-#include "ffmpeg.h"
+// #include "ffmpeg.h"
 #include "motion.h"
 
 #if (defined(BSD) && !defined(PWCBSD)) 
@@ -559,7 +559,7 @@ static void process_image_ring(struct context *cnt, unsigned int max_images)
             //smoothvideo: payne 10/15/2008
             //located in two places
               /* process this only if we're outputting to a movie */
-              if (cnt->conf.smooth_video && (cnt->ffmpeg_output || cnt->conf.useextpipe)) {
+              if (cnt->conf.smooth_video && cnt->conf.useextpipe) {
                   if (cnt->prevtv.tv_sec > 0) {
                       time_t elapsedus = ((cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_sec - cnt->prevtv.tv_sec) * 1000000) +
                                           (cnt->imgs.image_ring[cnt->imgs.image_ring_out].tv.tv_usec - cnt->prevtv.tv_usec);
@@ -802,85 +802,6 @@ static int motion_init(struct context *cnt)
     }
 #endif /* !WITHOUT_V4L && !BSD */
 
-#if defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || defined(HAVE_SQLITE3)
-    if (cnt->conf.database_type) {
-        MOTION_LOG(NTC, TYPE_DB, NO_ERRNO, "%s: Database backend %s",  
-                   cnt->conf.database_type);
-        
-#ifdef HAVE_SQLITE3
-    if ((!strcmp(cnt->conf.database_type, "sqlite3")) && cnt->conf.sqlite3_db) {
-        MOTION_LOG(NTC, TYPE_DB, NO_ERRNO, "%s: DB %s", 
-                   cnt->conf.sqlite3_db);
-
-        if (sqlite3_open(cnt->conf.sqlite3_db, &cnt->database_sqlite3) != SQLITE_OK) {
-            MOTION_LOG(ERR, TYPE_DB, NO_ERRNO, "%s: Can't open database %s : %s\n",  
-                       cnt->conf.sqlite3_db, sqlite3_errmsg(cnt->database_sqlite3));
-            sqlite3_close(cnt->database_sqlite3);
-            exit(1);
-        }
-    }
-#endif /* HAVE_SQLITE3 */
-
-#ifdef HAVE_MYSQL
-        if ((!strcmp(cnt->conf.database_type, "mysql")) && (cnt->conf.database_dbname)) { 
-            // close database to be sure that we are not leaking
-            mysql_close(cnt->database);
-
-            cnt->database = (MYSQL *) mymalloc(sizeof(MYSQL));
-            mysql_init(cnt->database);
-
-            if (!mysql_real_connect(cnt->database, cnt->conf.database_host, cnt->conf.database_user,
-                cnt->conf.database_password, cnt->conf.database_dbname, 0, NULL, 0)) {
-                MOTION_LOG(ERR, TYPE_DB, NO_ERRNO, "%s: Cannot connect to MySQL database %s on host %s with user %s",
-                           cnt->conf.database_dbname, cnt->conf.database_host, 
-                           cnt->conf.database_user);
-                MOTION_LOG(ERR, TYPE_DB, NO_ERRNO, "%s: MySQL error was %s", mysql_error(cnt->database));
-                return -2;
-            }
-#if (defined(MYSQL_VERSION_ID)) && (MYSQL_VERSION_ID > 50012)
-            my_bool my_true = TRUE;
-            mysql_options(cnt->database, MYSQL_OPT_RECONNECT, &my_true);
-#endif
-        }
-#endif /* HAVE_MYSQL */
-
-#ifdef HAVE_PGSQL
-        if ((!strcmp(cnt->conf.database_type, "postgresql")) && (cnt->conf.database_dbname)) {
-            char connstring[255];
-
-            /* 
-             * Create the connection string.
-             * Quote the values so we can have null values (blank)
-             */
-            snprintf(connstring, 255,
-                     "dbname='%s' host='%s' user='%s' password='%s' port='%d'",
-                      cnt->conf.database_dbname, /* dbname */
-                      (cnt->conf.database_host ? cnt->conf.database_host : ""), /* host (may be blank) */
-                      (cnt->conf.database_user ? cnt->conf.database_user : ""), /* user (may be blank) */
-                      (cnt->conf.database_password ? cnt->conf.database_password : ""), /* password (may be blank) */
-                      cnt->conf.database_port
-            );
-
-            cnt->database_pg = PQconnectdb(connstring);
-            if (PQstatus(cnt->database_pg) == CONNECTION_BAD) {
-                MOTION_LOG(ERR, TYPE_DB, NO_ERRNO, "%s: Connection to PostgreSQL database '%s' failed: %s",
-                           cnt->conf.database_dbname, PQerrorMessage(cnt->database_pg));
-                return -2;
-            }
-        }
-#endif /* HAVE_PGSQL */
-    
-
-        /* Set the sql mask file according to the SQL config options*/
-
-        cnt->sql_mask = cnt->conf.sql_log_image * (FTYPE_IMAGE + FTYPE_IMAGE_MOTION) +
-                        cnt->conf.sql_log_snapshot * FTYPE_IMAGE_SNAPSHOT +
-                        cnt->conf.sql_log_movie * (FTYPE_MPEG + FTYPE_MPEG_MOTION) +
-                        cnt->conf.sql_log_timelapse * FTYPE_MPEG_TIMELAPSE;
-    }
-
-#endif /* defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || defined(HAVE_SQLITE3) */
-
     /* Load the mask file if any */
     if (cnt->conf.mask_file) {
         if ((picture = myfopen(cnt->conf.mask_file, "r", 0))) {
@@ -1046,23 +967,6 @@ static void motion_cleanup(struct context *cnt)
     }
 
     if (cnt->conf.database_type) {
-#ifdef HAVE_MYSQL
-        if ( (!strcmp(cnt->conf.database_type, "mysql")) && (cnt->conf.database_dbname)) {    
-            mysql_close(cnt->database); 
-        }
-#endif /* HAVE_MYSQL */
-
-#ifdef HAVE_PGSQL
-        if ((!strcmp(cnt->conf.database_type, "postgresql")) && (cnt->conf.database_dbname)) {
-            PQfinish(cnt->database_pg);
-        }
-#endif /* HAVE_PGSQL */ 
-
-#ifdef HAVE_SQLITE3    
-        /* Close the SQLite database */
-        if (cnt->conf.sqlite3_db)
-            sqlite3_close(cnt->database_sqlite3);
-#endif /* HAVE_SQLITE3 */
     }
 
     /* Cleanup the previmg buffer */
@@ -1165,16 +1069,6 @@ static void *motion_loop(void *arg)
 
     if (cnt->track.type)
         cnt->moved = track_center(cnt, cnt->video_dev, 0, 0, 0);
-
-#ifdef __OpenBSD__
-    /* 
-     * FIXMARK 
-     * Fixes zombie issue on OpenBSD 4.6
-     */
-    struct sigaction sig_handler_action;
-    struct sigaction sigchild_action;
-    setup_signals(&sig_handler_action, &sigchild_action);
-#endif
 
     /*
      * MAIN MOTION LOOP BEGINS HERE 
@@ -1371,12 +1265,6 @@ static void *motion_loop(void *arg)
                     // event for re-acquired video signal can be called here
                 }
                 cnt->missing_frame_counter = 0;
-
-#ifdef HAVE_FFMPEG
-                /* Deinterlace the image with ffmpeg, before the image is modified. */
-                if (cnt->conf.ffmpeg_deinterlace) 
-                    ffmpeg_deinterlace(cnt->current_image->image, cnt->imgs.width, cnt->imgs.height);
-#endif
 
                 /* 
                  * Save the newly captured still virgin image to a buffer
@@ -1767,11 +1655,7 @@ static void *motion_loop(void *arg)
             if (cnt->conf.emulate_motion && (cnt->startup_frames == 0)) {
                 cnt->detecting_motion = 1;
                 MOTION_LOG(INF, TYPE_ALL, NO_ERRNO, "%s: Emulating motion");
-#ifdef HAVE_FFMPEG
-                if (cnt->ffmpeg_output || (cnt->conf.useextpipe && cnt->extpipe)) {
-#else
                 if (cnt->conf.useextpipe && cnt->extpipe) {
-#endif
                     /* Setup the postcap counter */
                     cnt->postcap = cnt->conf.post_capture;
                     MOTION_LOG(DBG, TYPE_ALL, NO_ERRNO, "%s: (Em) Init post capture %d", 
@@ -1816,11 +1700,7 @@ static void *motion_loop(void *arg)
                         cnt->imgs.image_ring[i].flags |= IMAGE_SAVE;
                     
                 } else if ((cnt->postcap) && 
-#ifdef HAVE_FFMPEG
-                           (cnt->ffmpeg_output || (cnt->conf.useextpipe && cnt->extpipe))) {
-#else
                            (cnt->conf.useextpipe && cnt->extpipe)) {			
-#endif 
                    /* we have motion in this frame, but not enought frames for trigger. Check postcap */
                     cnt->current_image->flags |= (IMAGE_POSTCAP | IMAGE_SAVE);
                     cnt->postcap--;
@@ -1833,11 +1713,7 @@ static void *motion_loop(void *arg)
                 /* Always call motion_detected when we have a motion image */
                 motion_detected(cnt, cnt->video_dev, cnt->current_image);
             } else if ((cnt->postcap) && 
-#ifdef HAVE_FFMPEG
-                      (cnt->ffmpeg_output || (cnt->conf.useextpipe && cnt->extpipe))) {
-#else
                       (cnt->conf.useextpipe && cnt->extpipe)) {	
-#endif
                 /* No motion, doing postcap */
                 cnt->current_image->flags |= (IMAGE_POSTCAP | IMAGE_SAVE);
                 cnt->postcap--;
@@ -1953,7 +1829,7 @@ static void *motion_loop(void *arg)
             process_image_ring(cnt, 2);
             /* For movie realtime sync.  code needed here so we don't run into issues
             with high numbers of queued images, which would slow down processing */
-            if (cnt->conf.smooth_video && (cnt->ffmpeg_output || (cnt->conf.useextpipe))) {
+            if (cnt->conf.smooth_video && cnt->conf.useextpipe) {
                 /* process this if we're outputting to a movie only.. */
                 if (cnt->prevtv.tv_sec > 0) { /* only run through this block of code if we're in an event --
                                                minimal processing is KEY =) */
@@ -2045,8 +1921,6 @@ static void *motion_loop(void *arg)
 
     /***** MOTION LOOP - TIMELAPSE FEATURE SECTION *****/
 
-#ifdef HAVE_FFMPEG
-
         if (cnt->conf.timelapse) {
 
             /* 
@@ -2105,16 +1979,7 @@ static void *motion_loop(void *arg)
                 time_last_frame % cnt->conf.timelapse)
                 event(cnt, EVENT_TIMELAPSE, cnt->current_image->image, NULL, NULL, 
                       &cnt->current_image->timestamp_tm);
-        } else if (cnt->ffmpeg_timelapse) {
-        /* 
-         * If timelapse movie is in progress but conf.timelapse is zero then close timelapse file
-         * This is an important feature that allows manual roll-over of timelapse file using the http
-         * remote control via a cron job.
-         */
-            event(cnt, EVENT_TIMELAPSEEND, NULL, NULL, NULL, cnt->currenttime_tm);
         }
-
-#endif /* HAVE_FFMPEG */
 
         time_last_frame = time_current_frame;
 
@@ -2134,10 +1999,6 @@ static void *motion_loop(void *arg)
         if (cnt->conf.setup_mode) {
             event(cnt, EVENT_IMAGE, cnt->imgs.out, NULL, &cnt->pipe, cnt->currenttime_tm);
             event(cnt, EVENT_STREAM, cnt->imgs.out, NULL, NULL, cnt->currenttime_tm);
-#ifdef HAVE_SDL
-            if (cnt_list[0]->conf.sdl_threadnr == cnt->threadnr)
-                event(cnt, EVENT_SDL_PUT, cnt->imgs.out, NULL, NULL, cnt->currenttime_tm);
-#endif
         } else {
             event(cnt, EVENT_IMAGE, cnt->current_image->image, NULL, 
                   &cnt->pipe, &cnt->current_image->timestamp_tm);
@@ -2145,11 +2006,6 @@ static void *motion_loop(void *arg)
             if (!cnt->conf.stream_motion || cnt->shots == 1)
                 event(cnt, EVENT_STREAM, cnt->current_image->image, NULL, NULL, 
                       &cnt->current_image->timestamp_tm);
-#ifdef HAVE_SDL
-            if (cnt_list[0]->conf.sdl_threadnr == cnt->threadnr)
-                event(cnt, EVENT_SDL_PUT, cnt->current_image->image, NULL, NULL,
-                      &cnt->current_image->timestamp_tm);
-#endif
         }
 
         event(cnt, EVENT_IMAGEM, cnt->imgs.out, NULL, &cnt->mpipe, cnt->currenttime_tm);
@@ -2208,19 +2064,6 @@ static void *motion_loop(void *arg)
                  */
                 smartmask_ratio = 5 * cnt->lastrate * (11 - cnt->smartmask_speed);
             }
-
-#if defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || defined(HAVE_SQLITE3)
-
-            /* 
-             * Set the sql mask file according to the SQL config options
-             * We update it for every frame in case the config was updated
-             * via remote control.
-             */
-            cnt->sql_mask = cnt->conf.sql_log_image * (FTYPE_IMAGE + FTYPE_IMAGE_MOTION) +
-                            cnt->conf.sql_log_snapshot * FTYPE_IMAGE_SNAPSHOT +
-                            cnt->conf.sql_log_movie * (FTYPE_MPEG + FTYPE_MPEG_MOTION) +
-                            cnt->conf.sql_log_timelapse * FTYPE_MPEG_TIMELAPSE;
-#endif /* defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || defined(HAVE_SQLITE3) */
 
         }
 
@@ -2515,11 +2358,7 @@ static void motion_startup(int daemonize, int argc, char *argv[])
 
     //set_log_level(cnt_list[0]->log_level);   
 
-#ifdef HAVE_SDL
-     MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Motion "VERSION" Started with SDL support");
-#else
      MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Motion "VERSION" Started");
-#endif
 
     if ((cnt_list[0]->conf.log_file) && (strncmp(cnt_list[0]->conf.log_file, "syslog", 6))) {
         set_log_mode(LOGMODE_FILE);
@@ -2713,14 +2552,6 @@ int main (int argc, char **argv)
 
     motion_startup(1, argc, argv);
 
-#ifdef HAVE_FFMPEG
-    /* 
-     * FFMpeg initialization is only performed if FFMpeg support was found
-     * and not disabled during the configure phase.
-     */
-    ffmpeg_init();
-#endif /* HAVE_FFMPEG */
-
     /* 
      * In setup mode, Motion is very communicative towards the user, which
      * allows the user to experiment with the config parameters in order to
@@ -2779,12 +2610,6 @@ int main (int argc, char **argv)
 
             start_motion_thread(cnt_list[i], &thread_attr);
         }
-
-#ifdef HAVE_SDL
-        if (cnt_list[0]->conf.sdl_threadnr > 0)
-            sdl_start(cnt_list[cnt_list[1] != NULL ? cnt_list[0]->conf.sdl_threadnr : 0]->conf.width,
-                      cnt_list[cnt_list[1] != NULL ? cnt_list[0]->conf.sdl_threadnr : 0]->conf.height);
-#endif
 
         /* 
          * Create a thread for the control interface if requested. Create it
@@ -2865,11 +2690,6 @@ int main (int argc, char **argv)
             SLEEP(2, 0);
 
     } while (restart); /* loop if we're supposed to restart */
-
-#ifdef HAVE_SDL
-    sdl_stop();
-#endif
-
 
     // Be sure that http control exits fine
     cnt_list[0]->finish = 1;
