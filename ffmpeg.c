@@ -326,6 +326,7 @@ void ffmpeg_init()
 static AVOutputFormat *get_oformat(const char *codec, char *filename)
 {
     const char *ext;
+    const int *ext_length;
     AVOutputFormat *of = NULL;
     /*
      * Here, we use guess_format to automatically setup the codec information.
@@ -412,14 +413,19 @@ static AVOutputFormat *get_oformat(const char *codec, char *filename)
 #else        
         of = av_guess_format("mov", NULL, NULL);
 #endif
-	    }
-  else if (strcmp (codec, "ogg") == 0)
-    {
-      ext = ".ogg";
+	} else if (strcmp (codec, "ogg") == 0) {
+        ext = ".ogg";
 #ifdef GUESS_NO_DEPRECATED
-      of = guess_format ("ogg", NULL, NULL);
+        of = guess_format ("ogg", NULL, NULL);
 #else
-      of = av_guess_format ("ogg", NULL, NULL);
+        of = av_guess_format ("ogg", NULL, NULL);
+#endif
+    } else if (strcmp (codec, "webm") == 0) {
+        ext = ".webm";
+#ifdef GUESS_NO_DEPRECATED
+        of = guess_format ("webm", NULL, NULL);
+#else
+        of = av_guess_format ("webm", NULL, NULL);
 #endif
     } else {
         MOTION_LOG(ERR, TYPE_ENCODER, NO_ERRNO, "%s: ffmpeg_video_codec option value"
@@ -433,8 +439,9 @@ static AVOutputFormat *get_oformat(const char *codec, char *filename)
         return NULL;
     }
 
-    /* The 4 allows for ".avi" or ".mpg" to be appended. */
-    strncat(filename, ext, 4);
+    /* Append extension to filename */
+    ext_length = strlength(ext);
+    strncat(filename, ext, ext_length);
 
     return of;
 }
