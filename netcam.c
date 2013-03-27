@@ -2115,7 +2115,7 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
         http_host_port = malloc(1+ strlen(buff));
         sprintf(http_host_port, ":%d", url->port);    
     }
-
+    
     /* First the http context structure. */
     netcam->response = (struct rbuf *) mymalloc(sizeof(struct rbuf));
     memset(netcam->response, 0, sizeof(struct rbuf));
@@ -2172,10 +2172,12 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
         /* Free the working variables. */
         free(encuserpass);
     }
-   if(cnt->conf.netcam_cookie){
+    
+    if (cnt->conf.netcam_cookie) {
         http_cookie =malloc(strlen(http_cookie_header) + strlen(cnt->conf.netcam_cookie));
         sprintf(http_cookie, http_cookie_header, cnt->conf.netcam_cookie);
     }
+    
 
     /*
      * We are now ready to set up the netcam's "connect request".  Most of
@@ -2219,8 +2221,8 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
          */
         url->path = NULL;
     }
-
-    ix += strlen(ptr)+strlen(http_host_port);
+    
+    ix += strlen(ptr);
 
     /* 
      * Now add the required number of characters for the close header
@@ -2228,6 +2230,8 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
      * there is a problem (rather than the flag in the conf structure
      * which is read-only.
      */
+    if (http_host_port)
+        ix += strlen(http_host_port);
  
     if (netcam->connect_keepalive) 
         ix += strlen(connect_req_keepalive);
@@ -2249,12 +2253,23 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
      * Now that we know how much space we need, we can allocate space
      * for the connect-request string.
      */
-    netcam->connect_request = mymalloc(strlen(connect_req) + ix +
+    if (http_cookie) {
+        netcam->connect_request = mymalloc(strlen(connect_req) + ix +
                               strlen(netcam->connect_host) + strlen(http_cookie));
+        /* Now create the request string with an sprintf. */
+        sprintf(netcam->connect_request, connect_req, ptr,
+                netcam->connect_host,http_host_port,http_cookie); 
+    } else {
+        netcam->connect_request = mymalloc(strlen(connect_req) + ix +
+                              strlen(netcam->connect_host));
+        /* Now create the request string with an sprintf. */
+        sprintf(netcam->connect_request, connect_req, ptr,
+                netcam->connect_host); 
+    }
 
-    /* Now create the request string with an sprintf. */
-    sprintf(netcam->connect_request, connect_req, ptr,
-            netcam->connect_host,http_host_port,http_cookie); 
+    // fprintf(stderr, "Hackeron %s\n", netcam->connect_request);
+    // fprintf(stderr, "Hackeron %s\n", ptr);
+    // fprintf(stderr, "Hackeron %s\n", netcam->connect_host);
 
     if (netcam->connect_keepalive)  
         strcat(netcam->connect_request, connect_req_keepalive);
