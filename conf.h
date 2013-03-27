@@ -122,6 +122,7 @@ struct config {
     const char *motionvidpipe;
     const char *netcam_url;
     const char *netcam_userpass;
+    const char *netcam_cookie;
     const char *netcam_keepalive;
     const char *netcam_proxy;
     unsigned int netcam_tolerant_check;

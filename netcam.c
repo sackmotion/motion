@@ -60,11 +60,13 @@ void file_free_context(tfile_context* ctxt);
 static const char *connect_req;
 
 static const char *connect_req_http10 = "GET %s HTTP/1.0\r\n"
-                                        "Host: %s\r\n"
+                                        "Host: %s%s\r\n"
+                                        "%s" //cookie string
                                         "User-Agent: Motion-netcam/" VERSION "\r\n";
 
 static const char *connect_req_http11 = "GET %s HTTP/1.1\r\n"
-                                        "Host: %s\r\n"
+                                        "Host: %s%s\r\n"
+                                        "%s" //cookie string
                                         "User-Agent: Motion-netcam/" VERSION "\r\n";
 
 static const char *connect_req_close = "Connection: close\r\n";
@@ -2102,7 +2104,17 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
     char *userpass;                   /* Temp pointer to config value */
     char *encuserpass;                /* Temp storage for encoded ver */
     char *request_pass = NULL;        /* Temp storage for base64 conv */
+    char *http_cookie = NULL;         /* HTTP req cookie string */
+    const char *http_cookie_header = "Cookie: %s\r\n";
+    char *http_host_port = NULL;      /* if port isn't 80 it must be in HTTP Host header */
     int ix;
+
+    if(url->port!=80){
+        char buff[5];
+        sprintf(buff,"%d", url->port);
+        http_host_port = malloc(1+ strlen(buff));
+        sprintf(http_host_port, ":%d", url->port);    
+    }
 
     /* First the http context structure. */
     netcam->response = (struct rbuf *) mymalloc(sizeof(struct rbuf));
@@ -2160,6 +2172,10 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
         /* Free the working variables. */
         free(encuserpass);
     }
+   if(cnt->conf.netcam_cookie){
+        http_cookie =malloc(strlen(http_cookie_header) + strlen(cnt->conf.netcam_cookie));
+        sprintf(http_cookie, http_cookie_header, cnt->conf.netcam_cookie);
+    }
 
     /*
      * We are now ready to set up the netcam's "connect request".  Most of
@@ -2176,6 +2192,7 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
      * is set, since HTTP 1.0 Keep-alive cannot be transferred through.
      */
     if (cnt->conf.netcam_proxy) {
+        http_host_port = NULL;
         /*
          * Allocate space for a working string to contain the path.
          * The extra 4 is for "://" and string terminator.
@@ -2187,6 +2204,7 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
         netcam->connect_keepalive = FALSE; /* Disable Keepalive if proxy */
         free((void *)netcam->cnt->conf.netcam_keepalive);
         netcam->cnt->conf.netcam_keepalive = strdup("off");
+        
 
         MOTION_LOG(NTC, TYPE_NETCAM, NO_ERRNO, "%s: "
                    "Removed netcam_keepalive flag due to proxy set." 
@@ -2202,7 +2220,7 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
         url->path = NULL;
     }
 
-    ix += strlen(ptr);
+    ix += strlen(ptr)+strlen(http_host_port);
 
     /* 
      * Now add the required number of characters for the close header
@@ -2232,11 +2250,11 @@ static int netcam_http_build_url(netcam_context_ptr netcam, struct url_t *url)
      * for the connect-request string.
      */
     netcam->connect_request = mymalloc(strlen(connect_req) + ix +
-                              strlen(netcam->connect_host));
+                              strlen(netcam->connect_host) + strlen(http_cookie));
 
     /* Now create the request string with an sprintf. */
     sprintf(netcam->connect_request, connect_req, ptr,
-            netcam->connect_host); 
+            netcam->connect_host,http_host_port,http_cookie); 
 
     if (netcam->connect_keepalive)  
         strcat(netcam->connect_request, connect_req_keepalive);

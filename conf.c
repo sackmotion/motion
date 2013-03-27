@@ -122,6 +122,7 @@ struct config conf_template = {
     motionvidpipe:                  NULL,
     netcam_url:                     NULL,
     netcam_userpass:                NULL,
+    netcam_cookie:                  NULL,
     netcam_keepalive:               "off",
     netcam_proxy:                   NULL,
     netcam_tolerant_check:          0,
@@ -366,6 +367,15 @@ config_param config_params[] = {
     "# Syntax is user:password",
     0,
     CONF_OFFSET(netcam_userpass),
+    copy_string,
+    print_string
+    },
+    {
+    "netcam_cookie",
+    "# HTTP Cookie string for network camera (only if required). Default: not defined\n"
+    "# Syntax is name1=value1;name2=value2",
+    0,
+    CONF_OFFSET(netcam_cookie),
     copy_string,
     print_string
     },
