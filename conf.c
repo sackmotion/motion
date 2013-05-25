@@ -146,6 +146,9 @@ struct config conf_template = {
     netcam_keepalive:               "off",
     netcam_proxy:                   NULL,
     netcam_tolerant_check:          0,
+#ifdef HAVE_MMAL
+    mmalcam_name:					NULL,
+#endif
     text_changes:                   0,
     text_left:                      NULL,
     text_right:                     DEF_TIMESTAMP,
@@ -409,6 +412,15 @@ config_param config_params[] = {
     CONF_OFFSET(netcam_tolerant_check),
     copy_bool,
     print_bool
+    },
+    {
+    "mmalcam_name",
+    "# Name of camera to use if you are using a camera accessed through OpenMax/MMAL\n"
+    " Default: Not defined",
+    0,
+    CONF_OFFSET(mmalcam_name),
+    copy_string,
+    print_string
     },
     {
     "auto_brightness",
