@@ -22,7 +22,9 @@
 #include "picture.h"
 #include "rotate.h"
 
+#ifdef _PROFILING
 #include "gperftools/profiler.h"
+#endif
 
 /* Forward declarations */
 static int motion_init(struct context *cnt);

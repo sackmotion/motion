@@ -101,7 +101,7 @@ typedef struct
 } MMAL_PARAM_THUMBNAIL_CONFIG_T;
 
 /// struct contain camera settings
-typedef struct
+typedef struct RASPICAM_CAMERA_PARAMETERS
 {
    int sharpness;             /// -100 to 100
    int contrast;              /// -100 to 100

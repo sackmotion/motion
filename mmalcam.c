@@ -10,14 +10,9 @@
  *    See also the file 'COPYING'.
  *
  */
-#include "motion.h"
-#ifdef HAVE_MMAL
-
-#include "rotate.h"
 
 #include "bcm_host.h"
 #include "interface/vcos/vcos.h"
-
 #include "interface/mmal/mmal.h"
 #include "interface/mmal/mmal_buffer.h"
 #include "interface/mmal/mmal_port.h"
@@ -25,6 +20,10 @@
 #include "interface/mmal/util/mmal_util_params.h"
 #include "interface/mmal/util/mmal_default_components.h"
 #include "interface/mmal/util/mmal_connection.h"
+#include "raspicam/RaspiCamControl.h"
+
+#include "motion.h"
+#include "rotate.h"
 
 #define MMALCAM_OK		0
 #define MMALCAM_ERROR	-1
@@ -145,7 +144,7 @@ static int create_camera_component(mmalcam_context_ptr mmalcam, const char *mmal
         goto error;
     }
 
-    raspicamcontrol_set_all_parameters(camera_component, &mmalcam->camera_parameters);
+    raspicamcontrol_set_all_parameters(camera_component, mmalcam->camera_parameters);
     mmalcam->camera_component = camera_component;
     mmalcam->camera_capture_port = video_port;
     mmalcam->camera_capture_port->userdata = (struct MMAL_PORT_USERDATA_T*) mmalcam;
@@ -248,11 +247,17 @@ int mmalcam_start(struct context *cnt)
             "%s: MMAL Camera thread starting... for camera (%s) of %d x %d at %d fps",
             cnt->conf.mmalcam_name, cnt->conf.width, cnt->conf.height, cnt->conf.frame_limit);
 
-    raspicamcontrol_set_defaults(&mmalcam->camera_parameters);
+    mmalcam->camera_parameters = (RASPICAM_CAMERA_PARAMETERS*)malloc(sizeof(RASPICAM_CAMERA_PARAMETERS));
+    if (mmalcam->camera_parameters == NULL) {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "camera params couldn't be allocated");
+        return MMALCAM_ERROR;
+    }
+
+    raspicamcontrol_set_defaults(mmalcam->camera_parameters);
     mmalcam->width = cnt->conf.width;
     mmalcam->height = cnt->conf.height;
     mmalcam->framerate = cnt->conf.frame_limit;
-    mmalcam->camera_parameters.hflip = 1;
+    mmalcam->camera_parameters->hflip = 1;
 
     cnt->imgs.width = mmalcam->width;
     cnt->imgs.height = mmalcam->height;
@@ -316,6 +321,10 @@ void mmalcam_cleanup(struct mmalcam_context *mmalcam)
             destroy_camera_component(mmalcam);
         }
 
+        if (mmalcam->camera_parameters) {
+            free(mmalcam->camera_parameters);
+        }
+
         free(mmalcam);
     }
 }
@@ -373,4 +382,3 @@ int mmalcam_next(struct context *cnt, unsigned char *map)
 
     return 0;
 }
-#endif

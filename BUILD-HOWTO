@@ -1,0 +1,62 @@
+INTRODUCTION
+------------
+This file describes what tools you need to build this experimental Pi specific version of motion, and how to perform the build.
+
+The current version of the cmake script does not perform full configuration of the build, nor does it check for dependencies. 
+
+Hopefully this document should give you the information you need to get those dependencies; at some time in the future the build script should be made more capable to address this.
+
+REQUIRED TOOLS
+--------------
+* cmake 2.8.x.
+* Either native gcc and build essentials on Pi, or Pi-compatible ARM gcc cross compiler.
+* git (to obtain some Pi specific files).
+
+DEPENDENCIES
+------------
+The following libraries are required - either natively installed on the Pi, or in a Pi root file system copy on a cross-compilation machine.
+They should be installable using packages from the Raspbian repositories. Make sure you install the actual package and the "dev" package.
+You can use http://www.debian.org/distrib/packages to search for the package names, or use the suggested ones below:
+
+* libjpeg       (libjpeg62, libjpeg62-dev)
+* libavformat   (libavformat53, libavformat-dev)
+* libavcodec    (libavcodec53, libavcodec-dev)
+* libavutil     (libavutil51, libavutil-dev)
+* libm          (libc6-dev)
+* libz          (zlib1g-dev)
+
+The Pi's VideoCore libraries are also required - these can be acquired (under /opt/vc/lib) by updating a Raspbian install, or from the Pi GitHub firmware repository (https://github.com/raspberrypi/firmware)
+
+The Pi userland source files are also needed - these can be obtained from the Pi GitHub (https://github.com/raspberrypi/userland)
+
+BUILDING ON A PI
+----------------
+In this package's source directory, run the following:
+
+	USERLANDPATH=<path-to-pi-userland-source-files> cmake .
+	make
+
+For example, assuming that the userland source files have been cloned via git into the default user's home directory:
+
+	USERLANDPATH=/home/pi/userland cmake .
+	make
+
+CROSS-COMPILING
+---------------
+You'll need an ARM cross compilation toolchain that supports the Pi's ARM architecture - you could get that from the Pi GitHub (https://github.com/raspberrypi/tools) into the local folder /opt/cross/Pi.
+
+You'll also need a copy of /lib, /opt and /usr from the Pi's Raspbian root file system with the above dependencies installed - rsync is good to use for copying these, but may take some time.
+
+Cross-compilation requires some additional environment variables to be provided when cmake is run:
+
+	TOOLPREFIX	ARM cross-compiler tool name prefixes - e.g. arm-linux-gnueabi-hf-
+	TOOLPATH	Path to cross compiler root - e.g. /opt/cross/Pi/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian
+	ROOTFSPATH	Path to copy of Pi root file system on cross compilation system, e.g. /opt/cross/Pi/rootfs
+
+So an example execution might be:
+
+	USERLANDPATH=/home/pi/userland TOOLPREFIX=arm-linux-gnueabi-hf- TOOLPATH=/opt/cross/Pi/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian ROOTFSPATH=/opt/cross/Pi/rootfs cmake .
+	make
+
+
+
