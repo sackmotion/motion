@@ -148,6 +148,7 @@ struct config conf_template = {
     netcam_tolerant_check:          0,
 #ifdef HAVE_MMAL
     mmalcam_name:					NULL,
+    mmalcam_control_params:         NULL,
 #endif
     text_changes:                   0,
     text_left:                      NULL,
@@ -413,6 +414,7 @@ config_param config_params[] = {
     copy_bool,
     print_bool
     },
+#ifdef HAVE_MMAL
     {
     "mmalcam_name",
     "# Name of camera to use if you are using a camera accessed through OpenMax/MMAL\n"
@@ -422,6 +424,16 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
+    {
+    "mmalcam_control_params",
+    "# Camera control parameters (see raspivid/raspistill tool documentation)\n"
+    " Default: Not defined",
+    0,
+    CONF_OFFSET(mmalcam_control_params),
+    copy_string,
+    print_string
+    },
+#endif
     {
     "auto_brightness",
     "# Let motion regulate the brightness of a video device (default: off).\n"

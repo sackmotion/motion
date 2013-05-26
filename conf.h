@@ -125,6 +125,7 @@ struct config {
     unsigned int netcam_tolerant_check;
 #ifdef HAVE_MMAL
     const char *mmalcam_name;
+    const char *mmalcam_control_params;
 #endif
     int text_changes;
     const char *text_left;

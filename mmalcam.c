@@ -37,6 +37,23 @@
 
 const int MAX_BITRATE = 30000000; // 30Mbits/s
 
+static void parse_camera_control_params(const char *control_params_str, RASPICAM_CAMERA_PARAMETERS *camera_params)
+{
+    char *control_params_tok = alloca(strlen(control_params_str) + 1);
+    strcpy(control_params_tok, control_params_str);
+
+    char *next_param = strtok(control_params_tok, " ");
+
+    while (next_param != NULL) {
+        char *param_val = strtok(NULL, " ");
+        if (raspicamcontrol_parse_cmdline(camera_params, next_param + 1, param_val) < 2) {
+            next_param = param_val;
+        } else {
+            next_param = strtok(NULL, " ");
+        }
+    }
+}
+
 static void check_disable_port(MMAL_PORT_T *port)
 {
     if (port && port->is_enabled) {
@@ -257,7 +274,10 @@ int mmalcam_start(struct context *cnt)
     mmalcam->width = cnt->conf.width;
     mmalcam->height = cnt->conf.height;
     mmalcam->framerate = cnt->conf.frame_limit;
-    mmalcam->camera_parameters->hflip = 1;
+
+    if (cnt->conf.mmalcam_control_params) {
+        parse_camera_control_params(cnt->conf.mmalcam_control_params, mmalcam->camera_parameters);
+    }
 
     cnt->imgs.width = mmalcam->width;
     cnt->imgs.height = mmalcam->height;
