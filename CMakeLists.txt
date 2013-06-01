@@ -64,6 +64,8 @@ endif()
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories(
+					${ROOTFSPATH}/usr/include/mysql
+					${ROOTFSPATH}/usr/include/postgresql
 					${USERLANDPATH}
 					${USERLANDPATH}/interface/vcos
 					${USERLANDPATH}/interface/vcos/pthreads
@@ -72,7 +74,7 @@ include_directories(
 					${USERLANDPATH}/host_applications/linux/libs/bcm_host/include
 					)
 					
-add_definitions(	-DVERSION="trunkREV557"
+add_definitions(	-DVERSION="mmaltest"
 					-Dsysconfdir="/etc"
 					-D_REENTRANT
 					-DHAVE_FFMPEG
@@ -134,6 +136,8 @@ target_link_libraries(motion
 						avcodec
 						avutil
 						z
+						mysqlclient
+						pq
 						bcm_host
 						vcos
 						vchiq_arm

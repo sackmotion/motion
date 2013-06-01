@@ -20,16 +20,15 @@
 #define HAVE_MEMORY_H 1
 
 /* Define to 1 if you have MySQL support */
-/* #undef HAVE_MYSQL */
+#define HAVE_MYSQL 1
 
 /* Define to 1 if you have PostgreSQL support */
-/* #undef HAVE_PGSQL */
+#define HAVE_PGSQL 1
 
 /* Define to 1 if you have SDL support */
 /* #undef HAVE_SDL */
 
 /* Define to 1 if you have MMAL support */
-/* #undef HAVE_MMAL */
 #define HAVE_MMAL 1
 
 /* Define to 1 if you have the <signal.h> header file. */
