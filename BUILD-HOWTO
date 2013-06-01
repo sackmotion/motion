@@ -18,12 +18,14 @@ The following libraries are required - either natively installed on the Pi, or i
 They should be installable using packages from the Raspbian repositories. Make sure you install the actual package and the "dev" package.
 You can use http://www.debian.org/distrib/packages to search for the package names, or use the suggested ones below:
 
-* libjpeg       (libjpeg62, libjpeg62-dev)
-* libavformat   (libavformat53, libavformat-dev)
-* libavcodec    (libavcodec53, libavcodec-dev)
-* libavutil     (libavutil51, libavutil-dev)
-* libm          (libc6-dev)
-* libz          (zlib1g-dev)
+* libjpeg        (libjpeg62, libjpeg62-dev)
+* libavformat    (libavformat53, libavformat-dev)
+* libavcodec     (libavcodec53, libavcodec-dev)
+* libavutil      (libavutil51, libavutil-dev)
+* libm           (libc6-dev)
+* libz           (zlib1g-dev)
+* libmysqlclient (libmysqlclient18, libmysqlclient-dev)
+* libpq		 (libpq5, libpq-dev)
 
 The Pi's VideoCore libraries are also required - these can be acquired (under /opt/vc/lib) by updating a Raspbian install, or from the Pi GitHub firmware repository (https://github.com/raspberrypi/firmware)
 
