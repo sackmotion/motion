@@ -8,6 +8,9 @@ some supporting files, and does not at this time contain a means
 to build the code. Generated code files have been pre-created
 using the original's configure script (see config.h).
 
+Downloading: a temporary prebuilt binary for Raspberry Pi is available at this link:
+https://www.dropbox.com/s/xdfcxm5hu71s97d/motion-mmal.tar.gz
+
 Original README text
 --------------------
 Motion up to version 3.1.8 was created and maintained by Jeroen Vreeken.
