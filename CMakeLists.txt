@@ -138,6 +138,7 @@ target_link_libraries(motion
 						z
 						mysqlclient
 						pq
+						rt
 						bcm_host
 						vcos
 						vchiq_arm

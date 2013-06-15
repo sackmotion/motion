@@ -149,6 +149,7 @@ struct config conf_template = {
 #ifdef HAVE_MMAL
     mmalcam_name:					NULL,
     mmalcam_control_params:         NULL,
+    mmalcam_use_still:              0,
 #endif
     text_changes:                   0,
     text_left:                      NULL,
@@ -432,6 +433,15 @@ config_param config_params[] = {
     CONF_OFFSET(mmalcam_control_params),
     copy_string,
     print_string
+    },
+    {
+    "mmalcam_use_still",
+    "# Use the still camera output - limits frame rate, but can show more of frame\n"
+    " Default: off",
+    0,
+    CONF_OFFSET(mmalcam_use_still),
+    copy_bool,
+    print_bool
     },
 #endif
     {
