@@ -21,6 +21,7 @@
 #include "event.h"
 #include "picture.h"
 #include "rotate.h"
+#include "metrics.h"
 
 #ifdef _PROFILING
 #include "gperftools/profiler.h"
@@ -699,6 +700,7 @@ static int motion_init(struct context *cnt)
         cnt->conf.filepath = mystrdup(".");
 
     /* set the device settings */
+    video_source_plugins_init(cnt);
     cnt->video_dev = vid_start(cnt);
 
     /* 
@@ -727,7 +729,7 @@ static int motion_init(struct context *cnt)
     memset(cnt->imgs.out, 0, cnt->imgs.size);
 
     /* contains the moving objects of ref. frame */
-    cnt->imgs.ref_dyn = mymalloc(cnt->imgs.motionsize * sizeof(cnt->imgs.ref_dyn));
+    cnt->imgs.ref_dyn = mymalloc(cnt->imgs.motionsize * sizeof(cnt->imgs.ref_dyn[0]));
     cnt->imgs.image_virgin = mymalloc(cnt->imgs.size);
     cnt->imgs.smartmask = mymalloc(cnt->imgs.motionsize);
     cnt->imgs.smartmask_final = mymalloc(cnt->imgs.motionsize);
@@ -1259,6 +1261,7 @@ static void *motion_loop(void *arg)
 
         /* Increase the shots variable for each frame captured within this second */
         cnt->shots++;
+        cnt->total_shots++;
 
         if (cnt->startup_frames > 0)
             cnt->startup_frames--;
@@ -1313,6 +1316,7 @@ static void *motion_loop(void *arg)
 
             /* Store shot number with pre_captured image */
             cnt->current_image->shot = cnt->shots;
+            cnt->current_image->total_shots = cnt->total_shots;
 
         /***** MOTION LOOP - RETRY INITIALIZING SECTION *****/
             /* 
@@ -2835,6 +2839,7 @@ int main (int argc, char **argv)
     cnt_list[0]->finish = 1;
     SLEEP(1, 0);
     MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Motion terminating");
+    metrics_report();
 
     /* Perform final cleanup. */
     pthread_key_delete(tls_key_threadnr);
@@ -3166,6 +3171,10 @@ size_t mystrftime(const struct context *cnt, char *s, size_t max, const char *us
 
             case 'q': // shots
                 sprintf(tempstr, "%02d", cnt->current_image->shot);
+                break;
+
+            case 'g': // shots
+                sprintf(tempstr, "%04d", cnt->current_image->total_shots);
                 break;
 
             case 'D': // diffs

@@ -11,10 +11,8 @@
 #ifndef MMALCAM_H_
 #define MMALCAM_H_
 
-//#include "interface/mmal/mmal.h"
-//#include "raspicam/RaspiCamControl.h"
-
 typedef struct mmalcam_context *mmalcam_context_ptr;
+struct MMAL_BUFFER_HEADER_T;
 
 typedef struct mmalcam_context {
     struct context *cnt;        /* pointer to parent motion
@@ -22,6 +20,8 @@ typedef struct mmalcam_context {
     int width;
     int height;
     int framerate;
+    int last_still_capture_time_ms;
+    FILE *raw_capture_file;
 
     struct MMAL_COMPONENT_T *camera_component;
     struct MMAL_PORT_T *camera_capture_port;
@@ -32,8 +32,6 @@ typedef struct mmalcam_context {
     void (*camera_buffer_callback)(struct MMAL_PORT_T *port, struct MMAL_BUFFER_HEADER_T *buffer);
 } mmalcam_context;
 
-int mmalcam_start (struct context *);
-int mmalcam_next (struct context *, unsigned char *);
-void mmalcam_cleanup (struct mmalcam_context *);
+extern void mmalcam_select_as_plugin(struct context *);
 
 #endif /* MMALCAM_H_ */

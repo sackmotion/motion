@@ -550,16 +550,13 @@ void vid_close(struct context *cnt)
     struct video_dev *prev = NULL;
 #endif /* WITHOUT_V4L */
 
-    /* Cleanup the netcam part */
-#ifdef HAVE_MMAL
-    if (cnt->mmalcam) {
-        MOTION_LOG(INF, TYPE_VIDEO, NO_ERRNO, "%s: calling mmalcam_cleanup");
-        mmalcam_cleanup(cnt->mmalcam);
-		cnt->mmalcam = NULL;
+    if (cnt->video_source.video_source_cleanup_fn) {
+        MOTION_LOG(INF, TYPE_VIDEO, NO_ERRNO, "%s: calling video source cleanup");
+        cnt->video_source.video_source_cleanup_fn(cnt);
         return;
     }
     else
-#endif
+    /* Cleanup the netcam part */
     if (cnt->netcam) {
         MOTION_LOG(INF, TYPE_VIDEO, NO_ERRNO, "%s: calling netcam_cleanup");
         netcam_cleanup(cnt->netcam, 0);
@@ -867,16 +864,13 @@ int vid_start(struct context *cnt)
     struct config *conf = &cnt->conf;
     int dev = -1;
 
-#ifdef HAVE_MMAL
-    if (conf->mmalcam_name) {
-        dev = mmalcam_start(cnt);
+    if (cnt->video_source.video_source_start_fn) {
+        dev = cnt->video_source.video_source_start_fn(cnt);
         if (dev < 0) {
-            mmalcam_cleanup(cnt->mmalcam);
-            cnt->mmalcam = NULL;
+            cnt->video_source.video_source_cleanup_fn(cnt);
         }
     }
     else
-#endif
     if (conf->netcam_url) {
         dev = netcam_start(cnt);
         if (dev < 0) {
@@ -920,15 +914,10 @@ int vid_next(struct context *cnt, unsigned char *map)
     int ret = -2;
     struct config *conf = &cnt->conf;
 
-#ifdef HAVE_MMAL
-    if (conf->mmalcam_name) {
-    	if (cnt->mmalcam == NULL) {
-    		return NETCAM_GENERAL_ERROR;
-    	}
-    	return mmalcam_next(cnt, map);
+    if (cnt->video_source.video_source_next_fn) {
+        return cnt->video_source.video_source_next_fn(cnt, map);
     }
     else
-#endif
     if (conf->netcam_url) {
         if (cnt->video_dev == -1)
             return NETCAM_GENERAL_ERROR;

@@ -123,10 +123,12 @@ struct config {
     const char *netcam_keepalive;
     const char *netcam_proxy;
     unsigned int netcam_tolerant_check;
+    const char *filecam_path;
 #ifdef HAVE_MMAL
     const char *mmalcam_name;
     const char *mmalcam_control_params;
     int mmalcam_use_still;
+    const char *mmalcam_raw_capture_file;
 #endif
     int text_changes;
     const char *text_left;

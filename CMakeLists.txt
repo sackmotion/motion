@@ -14,9 +14,9 @@
 project(motion)
 cmake_minimum_required(VERSION 2.8)
 
-#set(TOOLPATH /home/ntuckett/RPi/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian)
-#set(ROOTFSPATH /home/ntuckett/RPi/rootfs-2013-05)
-#set(USERLANDPATH /home/ntuckett/RPi/userland)
+#set(TOOLPATH ~/RPi/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian)
+#set(ROOTFSPATH ~/RPi/rootfs-2013-05)
+#set(USERLANDPATH ~/RPi/userland)
 #set(TOOLPREFIX arm-linux-gnueabihf-)
 
 set(ROOTFSPATH $ENV{ROOTFSPATH})
@@ -28,6 +28,7 @@ if(NOT MACHINE MATCHES "arm*")
 	set(TOOLPATH $ENV{TOOLPATH})
 	set(TOOLPREFIX $ENV{TOOLPREFIX})
 	set(CMAKE_C_COMPILER ${TOOLPATH}/bin/${TOOLPREFIX}gcc)
+	set(CMAKE_ASM_COMPILER ${TOOLPATH}/bin/${TOOLPREFIX}gcc)
 	set(CMAKE_SYSTEM_NAME Linux)
 
 	include_directories(
@@ -62,6 +63,8 @@ if(NOT MACHINE MATCHES "arm*")
 					)					
 endif()
 
+enable_language(ASM)
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include_directories(
 					${ROOTFSPATH}/usr/include/mysql
@@ -85,7 +88,6 @@ add_definitions(	-DVERSION="mmaltest"
 					-DTYPE_32BIT=int
 					-DHAVE_BSWAP
 					-Wall 
-					-c 
 					-fmessage-length=0 
 					-std=gnu99 
 					)
@@ -102,6 +104,7 @@ link_directories(
 					
 add_executable(motion 	
 				alg.c
+				alg_arm.s
 				conf.c
 				draw.c
 				event.c
@@ -115,13 +118,17 @@ add_executable(motion
 				netcam_ftp.c
 				netcam_jpeg.c
 				netcam_wget.c
+				filecam.c
+				metrics.c
 				picture.c
 				rotate.c
 				stream.c
 				track.c
+				utils.c
 				video2.c
 				video.c
 				video_common.c
+				videosourceplugin.c
 				vloopback_motion.c
 				webhttpd.c
 				raspicam/RaspiCamControl.c

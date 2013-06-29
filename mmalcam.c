@@ -11,7 +11,6 @@
  *
  */
 
-#include <time.h>
 #include "bcm_host.h"
 #include "interface/vcos/vcos.h"
 #include "interface/mmal/mmal.h"
@@ -25,6 +24,7 @@
 
 #include "motion.h"
 #include "rotate.h"
+#include "utils.h"
 
 #define MMALCAM_OK		0
 #define MMALCAM_ERROR	-1
@@ -51,37 +51,6 @@ enum
     CAPTURE_MODE_VIDEO  = 1,
     CAPTURE_MODE_STILL  = 2,
 };
-
-struct timespec timespec_diff(struct timespec start, struct timespec end)
-{
-    struct timespec temp;
-    if ((end.tv_nsec-start.tv_nsec)<0) {
-        temp.tv_sec = end.tv_sec-start.tv_sec-1;
-        temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
-    } else {
-        temp.tv_sec = end.tv_sec-start.tv_sec;
-        temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-    }
-    return temp;
-}
-
-static int get_elapsed_time_ms()
-{
-    static int base_set = 0;
-    static struct timespec base_tspec;
-    struct timespec tspec;
-
-    if (base_set == 0)
-    {
-        base_set = 1;
-        clock_gettime(CLOCK_REALTIME, &base_tspec);
-    }
-
-    clock_gettime(CLOCK_REALTIME, &tspec);
-    struct timespec diff = timespec_diff(base_tspec, tspec);
-
-    return (diff.tv_nsec / 1000000) + (diff.tv_sec * 1000);
-}
 
 static void parse_camera_control_params(const char *control_params_str, RASPICAM_CAMERA_PARAMETERS *camera_params)
 {
@@ -123,15 +92,13 @@ static void camera_buffer_video_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T
     mmal_queue_put(mmalcam->camera_buffer_queue, buffer);
 }
 
-static int last_still_capture_time_ms = 0;
-
 static void camera_buffer_still_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
     mmalcam_context_ptr mmalcam = (mmalcam_context_ptr) port->userdata;
     mmal_queue_put(mmalcam->camera_buffer_queue, buffer);
 
     int curr_time = get_elapsed_time_ms();
-    int capture_time_delta = curr_time - last_still_capture_time_ms;
+    int capture_time_delta = curr_time - mmalcam->last_still_capture_time_ms;
     if (capture_time_delta < STILL_CAPTURE_MIN_DELAY_MS)
     {
         vcos_sleep(STILL_CAPTURE_MIN_DELAY_MS - capture_time_delta);
@@ -142,7 +109,7 @@ static void camera_buffer_still_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T
         MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera capture start failed");
     }
 
-    last_still_capture_time_ms = curr_time;
+    mmalcam->last_still_capture_time_ms = curr_time;
 }
 
 static void set_port_format(int width, int height, MMAL_ES_FORMAT_T *format)
@@ -411,13 +378,21 @@ int mmalcam_start(struct context *cnt)
             MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera capture start failed");
             retval = MMALCAM_ERROR;
         }
-        last_still_capture_time_ms = get_elapsed_time_ms();
+        mmalcam->last_still_capture_time_ms = get_elapsed_time_ms();
     }
 
     if (retval == 0) {
         retval = send_pooled_buffers_to_port(mmalcam->camera_buffer_pool, mmalcam->camera_capture_port);
     }
 
+    if (retval == 0) {
+        if (mmalcam->cnt->conf.mmalcam_raw_capture_file) {
+            mmalcam->raw_capture_file = fopen(mmalcam->cnt->conf.mmalcam_raw_capture_file, "wb");
+            if (mmalcam->raw_capture_file == NULL) {
+                MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: MMAL couldn't open raw capture file %s", mmalcam->cnt->conf.mmalcam_raw_capture_file);
+            }
+        }
+    }
     return retval;
 }
 
@@ -437,8 +412,10 @@ int mmalcam_start(struct context *cnt)
  * Returns:              Nothing.
  *
  */
-void mmalcam_cleanup(struct mmalcam_context *mmalcam)
+void mmalcam_cleanup(struct context *cnt)
 {
+    mmalcam_context *mmalcam = cnt->mmalcam;
+
     MOTION_LOG(ALR, TYPE_VIDEO, NO_ERRNO, "MMAL Camera cleanup");
 
     if (mmalcam != NULL ) {
@@ -451,6 +428,10 @@ void mmalcam_cleanup(struct mmalcam_context *mmalcam)
 
         if (mmalcam->camera_parameters) {
             free(mmalcam->camera_parameters);
+        }
+
+        if (mmalcam->raw_capture_file) {
+            fclose(mmalcam->raw_capture_file);
         }
 
         free(mmalcam);
@@ -506,7 +487,7 @@ int mmalcam_next(struct context *cnt, unsigned char *map)
 
         if (mmalcam->cnt->conf.mmalcam_use_still) {
             int curr_time = get_elapsed_time_ms();
-            int capture_time_delta = curr_time - last_still_capture_time_ms;
+            int capture_time_delta = curr_time - mmalcam->last_still_capture_time_ms;
             if (capture_time_delta < STILL_CAPTURE_MIN_DELAY_MS)
             {
                 vcos_sleep(STILL_CAPTURE_MIN_DELAY_MS - capture_time_delta);
@@ -517,12 +498,23 @@ int mmalcam_next(struct context *cnt, unsigned char *map)
                 MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera capture start failed");
             }
 
-            last_still_capture_time_ms = curr_time;
+            mmalcam->last_still_capture_time_ms = curr_time;
         }
+    }
+
+    if (mmalcam->raw_capture_file) {
+        fwrite(map, 1, cnt->imgs.size, mmalcam->raw_capture_file);
     }
 
     if (cnt->rotate_data.degrees > 0)
         rotate_map(cnt, map);
 
     return 0;
+}
+
+void mmalcam_select_as_plugin(struct context *cnt)
+{
+    cnt->video_source.video_source_start_fn = mmalcam_start;
+    cnt->video_source.video_source_next_fn = mmalcam_next;
+    cnt->video_source.video_source_cleanup_fn = mmalcam_cleanup;
 }

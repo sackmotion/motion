@@ -150,6 +150,7 @@ struct config conf_template = {
     mmalcam_name:					NULL,
     mmalcam_control_params:         NULL,
     mmalcam_use_still:              0,
+    mmalcam_raw_capture_file:       NULL,
 #endif
     text_changes:                   0,
     text_left:                      NULL,
@@ -415,6 +416,15 @@ config_param config_params[] = {
     copy_bool,
     print_bool
     },
+    {
+    "filecam_path",
+    "# Path to file containing raw captured YUV frames from which to read input\n"
+    " Default: Not defined",
+    0,
+    CONF_OFFSET(filecam_path),
+    copy_string,
+    print_string
+    },
 #ifdef HAVE_MMAL
     {
     "mmalcam_name",
@@ -442,6 +452,15 @@ config_param config_params[] = {
     CONF_OFFSET(mmalcam_use_still),
     copy_bool,
     print_bool
+    },
+    {
+    "mmalcam_raw_capture_file",
+    "# Path to file where raw dump of camera YUV capture will be written (for testing, profiling & debugging)\n"
+    " Default: Not defined",
+    0,
+    CONF_OFFSET(mmalcam_raw_capture_file),
+    copy_string,
+    print_string
     },
 #endif
     {

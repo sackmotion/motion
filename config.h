@@ -126,3 +126,8 @@
 
 /* Define to 1 if you have avformat_alloc_context support */
 #define have_avformat_alloc_context 1
+
+#if defined(__ARM_ARCH_6ZK__)
+#define ARM_PMCR_METRICS        1
+#define ARM_OPTIMISATIONS       1
+#endif
