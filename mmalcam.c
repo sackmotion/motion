@@ -36,7 +36,6 @@
 #define VIDEO_FRAME_RATE_DEN 1
 #define VIDEO_OUTPUT_BUFFERS_NUM 3
 
-#define STILL_CAPTURE_MIN_DELAY_MS 5000
 #define STILL_PREVIEW_WIDTH 320
 #define STILL_PREVIEW_HEIGHT 240
 #define STILL_FRAME_RATE_NUM 3
@@ -92,26 +91,6 @@ static void camera_buffer_video_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T
     mmal_queue_put(mmalcam->camera_buffer_queue, buffer);
 }
 
-static void camera_buffer_still_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
-{
-    mmalcam_context_ptr mmalcam = (mmalcam_context_ptr) port->userdata;
-    mmal_queue_put(mmalcam->camera_buffer_queue, buffer);
-
-    int curr_time = get_elapsed_time_ms();
-    int capture_time_delta = curr_time - mmalcam->last_still_capture_time_ms;
-    if (capture_time_delta < STILL_CAPTURE_MIN_DELAY_MS)
-    {
-        vcos_sleep(STILL_CAPTURE_MIN_DELAY_MS - capture_time_delta);
-    }
-
-    if (mmal_port_parameter_set_boolean(mmalcam->camera_capture_port, MMAL_PARAMETER_CAPTURE, 1)
-            != MMAL_SUCCESS) {
-        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera capture start failed");
-    }
-
-    mmalcam->last_still_capture_time_ms = curr_time;
-}
-
 static void set_port_format(int width, int height, MMAL_ES_FORMAT_T *format)
 {
     format->encoding = MMAL_ENCODING_OPAQUE;
@@ -157,21 +136,18 @@ static int create_camera_component(mmalcam_context_ptr mmalcam, const char *mmal
     }
 
     //  set up the camera configuration
-    {
-        MMAL_PARAMETER_CAMERA_CONFIG_T cam_config = {
-                { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },
-                .max_stills_w = mmalcam->width,
-                .max_stills_h = mmalcam->height,
-                .stills_yuv422 = 0,
-                .one_shot_stills = 0,
-                .max_preview_video_w = mmalcam->width,
-                .max_preview_video_h = mmalcam->height,
-                .num_preview_video_frames = 3,
-                .stills_capture_circular_buffer_height = 0,
-                .fast_preview_resume = 0,
-                .use_stc_timestamp = MMAL_PARAM_TIMESTAMP_MODE_RESET_STC };
-        mmal_port_parameter_set(camera_component->control, &cam_config.hdr);
-    }
+    MMAL_PARAMETER_CAMERA_CONFIG_T cam_config = {
+            { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },
+            .max_stills_w = mmalcam->width,
+            .max_stills_h = mmalcam->height,
+            .stills_yuv422 = 0,
+            .one_shot_stills = 0,
+            .max_preview_video_w = mmalcam->width,
+            .max_preview_video_h = mmalcam->height,
+            .num_preview_video_frames = 3,
+            .stills_capture_circular_buffer_height = 0,
+            .fast_preview_resume = 0,
+            .use_stc_timestamp = MMAL_PARAM_TIMESTAMP_MODE_RESET_STC };
 
     switch(capture_mode)
     {
@@ -186,6 +162,8 @@ static int create_camera_component(mmalcam_context_ptr mmalcam, const char *mmal
 
         case CAPTURE_MODE_STILL:
         {
+            cam_config.one_shot_stills = 1;
+
             capture_port = camera_component->output[MMAL_CAMERA_CAPTURE_PORT];
             mmalcam->camera_buffer_callback = camera_buffer_video_callback;
             set_port_format(mmalcam->width, mmalcam->height, capture_port->format);
@@ -204,6 +182,8 @@ static int create_camera_component(mmalcam_context_ptr mmalcam, const char *mmal
             break;
         }
     }
+
+    mmal_port_parameter_set(camera_component->control, &cam_config.hdr);
 
     status = mmal_port_format_commit(capture_port);
 
@@ -347,6 +327,13 @@ int mmalcam_start(struct context *cnt)
     if (cnt->conf.mmalcam_use_still) {
         MOTION_LOG(ALR, TYPE_VIDEO, NO_ERRNO, "%s: MMAL Camera using still capture");
         capture_mode = CAPTURE_MODE_STILL;
+
+        if (cnt->conf.minimum_frame_time > 0) {
+            mmalcam->still_capture_delay_ms = cnt->conf.minimum_frame_time * 1000;
+        }
+        else {
+            mmalcam->still_capture_delay_ms = 1000 / cnt->conf.frame_limit;
+        }
     }
     else {
         MOTION_LOG(ALR, TYPE_VIDEO, NO_ERRNO, "%s: MMAL Camera using video capture");
@@ -460,46 +447,51 @@ int mmalcam_next(struct context *cnt, unsigned char *map)
 
     mmalcam = cnt->mmalcam;
 
-    MMAL_BUFFER_HEADER_T *camera_buffer = mmal_queue_wait(mmalcam->camera_buffer_queue);
+    int frame_complete = 0;
 
-    if (camera_buffer->cmd == 0 && (camera_buffer->flags & MMAL_BUFFER_HEADER_FLAG_FRAME_END)
-            && camera_buffer->length == cnt->imgs.size) {
-        mmal_buffer_header_mem_lock(camera_buffer);
-        memcpy(map, camera_buffer->data, cnt->imgs.size);
-        mmal_buffer_header_mem_unlock(camera_buffer);
-    } else {
-        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: cmd %d flags %08x size %d/%d at %08x",
-                camera_buffer->cmd, camera_buffer->flags, camera_buffer->length, camera_buffer->alloc_size, camera_buffer->data);
-    }
+    do {
+        MMAL_BUFFER_HEADER_T *camera_buffer = mmal_queue_wait(mmalcam->camera_buffer_queue);
 
-    mmal_buffer_header_release(camera_buffer);
-
-    if (mmalcam->camera_capture_port->is_enabled) {
-        MMAL_STATUS_T status;
-        MMAL_BUFFER_HEADER_T *new_buffer = mmal_queue_get(mmalcam->camera_buffer_pool->queue);
-
-        if (new_buffer) {
-            status = mmal_port_send_buffer(mmalcam->camera_capture_port, new_buffer);
+        if (camera_buffer->cmd == 0 && (camera_buffer->flags & MMAL_BUFFER_HEADER_FLAG_FRAME_END)
+                && camera_buffer->length == cnt->imgs.size) {
+            mmal_buffer_header_mem_lock(camera_buffer);
+            memcpy(map, camera_buffer->data, cnt->imgs.size);
+            mmal_buffer_header_mem_unlock(camera_buffer);
+            frame_complete = 1;
+        } else {
+            MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: cmd %d flags %08x size %d/%d at %08x",
+                    camera_buffer->cmd, camera_buffer->flags, camera_buffer->length, camera_buffer->alloc_size, camera_buffer->data);
         }
 
-        if (!new_buffer || status != MMAL_SUCCESS)
-            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "Unable to return a buffer to the camera capture port");
+        mmal_buffer_header_release(camera_buffer);
 
-        if (mmalcam->cnt->conf.mmalcam_use_still) {
-            int curr_time = get_elapsed_time_ms();
-            int capture_time_delta = curr_time - mmalcam->last_still_capture_time_ms;
-            if (capture_time_delta < STILL_CAPTURE_MIN_DELAY_MS)
-            {
-                vcos_sleep(STILL_CAPTURE_MIN_DELAY_MS - capture_time_delta);
+        if (mmalcam->camera_capture_port->is_enabled) {
+            MMAL_STATUS_T status;
+            MMAL_BUFFER_HEADER_T *new_buffer = mmal_queue_get(mmalcam->camera_buffer_pool->queue);
+
+            if (new_buffer) {
+                status = mmal_port_send_buffer(mmalcam->camera_capture_port, new_buffer);
             }
 
-            if (mmal_port_parameter_set_boolean(mmalcam->camera_capture_port, MMAL_PARAMETER_CAPTURE, 1)
-                    != MMAL_SUCCESS) {
-                MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera capture start failed");
-            }
-
-            mmalcam->last_still_capture_time_ms = curr_time;
+            if (!new_buffer || status != MMAL_SUCCESS)
+                MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "Unable to return a buffer to the camera capture port");
         }
+    } while (!frame_complete && mmalcam->camera_capture_port->is_enabled);
+
+    if (mmalcam->cnt->conf.mmalcam_use_still) {
+        int curr_time = get_elapsed_time_ms();
+        int capture_time_delta = curr_time - mmalcam->last_still_capture_time_ms;
+        if (capture_time_delta < mmalcam->still_capture_delay_ms)
+        {
+            vcos_sleep(mmalcam->still_capture_delay_ms - capture_time_delta);
+        }
+
+        if (mmal_port_parameter_set_boolean(mmalcam->camera_capture_port, MMAL_PARAMETER_CAPTURE, 1)
+                != MMAL_SUCCESS) {
+            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera capture start failed");
+        }
+
+        mmalcam->last_still_capture_time_ms = curr_time;
     }
 
     if (mmalcam->raw_capture_file) {

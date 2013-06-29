@@ -21,6 +21,7 @@ typedef struct mmalcam_context {
     int height;
     int framerate;
     int last_still_capture_time_ms;
+    int still_capture_delay_ms;
     FILE *raw_capture_file;
 
     struct MMAL_COMPONENT_T *camera_component;
