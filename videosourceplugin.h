@@ -9,6 +9,7 @@
 #define VIDEOSOURCEPLUGIN_H_
 
 struct context;
+struct image_data;
 
 typedef int (*video_source_start_ptr)(struct context *);
 typedef int (*video_source_next_ptr)(struct context *, struct image_data* imgdat);
