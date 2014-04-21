@@ -897,6 +897,7 @@ int vid_start(struct context *cnt)
  * Parameters:
  *     cnt        Pointer to the context for this thread
  *     map        Pointer to the buffer in which the function puts the new image
+ *     map2       Pointer to the secondary buffer in which the function puts the new image (optional, can be NULL)
  *
  * Global variable
  *     viddevs    The viddevs struct is "global" within the context of video.c
@@ -909,13 +910,13 @@ int vid_start(struct context *cnt)
  *    with bit 0 set            Non fatal V4L error (copy grey image and discard this image)
  *    with bit 1 set            Non fatal Netcam error
  */
-int vid_next(struct context *cnt, unsigned char *map)
+int vid_next(struct context *cnt, unsigned char *map, struct image_data* imgdat)
 {
     int ret = -2;
     struct config *conf = &cnt->conf;
 
     if (cnt->video_source.video_source_next_fn) {
-        return cnt->video_source.video_source_next_fn(cnt, map);
+        return cnt->video_source.video_source_next_fn(cnt, imgdat);
     }
     else
     if (conf->netcam_url) {

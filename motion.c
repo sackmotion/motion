@@ -131,6 +131,14 @@ static void image_ring_resize(struct context *cnt, int new_size)
                     tmp[i].image = mymalloc(cnt->imgs.size);
                     memset(tmp[i].image, 0x80, cnt->imgs.size);  /* initialize to grey */
                 }
+
+                if (cnt->imgs.secondary_size) {
+                    for(i = smallest; i < new_size; i++) {
+                        tmp[i].secondary_image = mymalloc(cnt->imgs.secondary_size);
+                        if (cnt->imgs.secondary_type == SECONDARY_TYPE_RAW)
+                            memset(tmp[i].secondary_image, 0x80, cnt->imgs.secondary_size);  /* initialize to grey */
+                    }
+                }
             }
             
             /* Free the old ring */
@@ -196,6 +204,7 @@ static void image_save_as_preview(struct context *cnt, struct image_data *img)
     memcpy(&cnt->imgs.preview_image.image, img, sizeof(struct image_data));
     /* restore image pointer */
     cnt->imgs.preview_image.image = image;
+    cnt->imgs.preview_image.secondary_image = NULL;
 
     /* Copy image */
     memcpy(cnt->imgs.preview_image.image, img->image, cnt->imgs.size);
@@ -211,18 +220,18 @@ static void image_save_as_preview(struct context *cnt, struct image_data *img)
     if (cnt->locate_motion_mode == LOCATE_PREVIEW) {
 
         if (cnt->locate_motion_style == LOCATE_BOX) {
-            alg_draw_location(&img->location, &cnt->imgs, cnt->imgs.width, cnt->imgs.preview_image.image,
+            alg_draw_location(&img->location, &cnt->imgs, &cnt->imgs.preview_image,
                               LOCATE_BOX, LOCATE_NORMAL, cnt->process_thisframe);
         } else if (cnt->locate_motion_style == LOCATE_REDBOX) {
-            alg_draw_red_location(&img->location, &cnt->imgs, cnt->imgs.width, cnt->imgs.preview_image.image,
+            alg_draw_red_location(&img->location, &cnt->imgs, &cnt->imgs.preview_image,
                                   LOCATE_REDBOX, LOCATE_NORMAL, cnt->process_thisframe);
         } else if (cnt->locate_motion_style == LOCATE_CROSS) {
-            alg_draw_location(&img->location, &cnt->imgs, cnt->imgs.width, cnt->imgs.preview_image.image,
+            alg_draw_location(&img->location, &cnt->imgs, &cnt->imgs.preview_image,
                               LOCATE_CROSS, LOCATE_NORMAL, cnt->process_thisframe);
         } else if (cnt->locate_motion_style == LOCATE_REDCROSS) {
-            alg_draw_red_location(&img->location, &cnt->imgs, cnt->imgs.width, cnt->imgs.preview_image.image,
+            alg_draw_red_location(&img->location, &cnt->imgs, &cnt->imgs.preview_image,
                                   LOCATE_REDCROSS, LOCATE_NORMAL, cnt->process_thisframe);
-        }     
+        }
     }
 }
 
@@ -423,16 +432,16 @@ static void motion_detected(struct context *cnt, int dev, struct image_data *img
     if (cnt->locate_motion_mode == LOCATE_ON) {
 
         if (cnt->locate_motion_style == LOCATE_BOX) {
-            alg_draw_location(location, imgs, imgs->width, img->image, LOCATE_BOX,
+            alg_draw_location(location, imgs, img, LOCATE_BOX,
                               LOCATE_BOTH, cnt->process_thisframe);
         } else if (cnt->locate_motion_style == LOCATE_REDBOX) {
-            alg_draw_red_location(location, imgs, imgs->width, img->image, LOCATE_REDBOX,
+            alg_draw_red_location(location, imgs, img, LOCATE_REDBOX,
                                   LOCATE_BOTH, cnt->process_thisframe);
         } else if (cnt->locate_motion_style == LOCATE_CROSS) {
-            alg_draw_location(location, imgs, imgs->width, img->image, LOCATE_CROSS, 
+            alg_draw_location(location, imgs, img, LOCATE_CROSS,
                               LOCATE_BOTH, cnt->process_thisframe);
         } else if (cnt->locate_motion_style == LOCATE_REDCROSS) {
-            alg_draw_red_location(location, imgs, imgs->width, img->image, LOCATE_REDCROSS, 
+            alg_draw_red_location(location, imgs, img, LOCATE_REDCROSS,
                                   LOCATE_BOTH, cnt->process_thisframe);
         }    
     }
@@ -467,7 +476,7 @@ static void motion_detected(struct context *cnt, int dev, struct image_data *img
                        cnt->conf.text_event, cnt->eventtime_tm, NULL, 0);
 
             /* EVENT_FIRSTMOTION triggers on_event_start_command and event_ffmpeg_newfile */
-            event(cnt, EVENT_FIRSTMOTION, img->image, NULL, NULL, &img->timestamp_tm);
+            event(cnt, EVENT_FIRSTMOTION, NULL, NULL, img, &img->timestamp_tm);
 
             MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Motion detected - starting event %d", 
                        cnt->event_nr);
@@ -491,7 +500,7 @@ static void motion_detected(struct context *cnt, int dev, struct image_data *img
          * We also disable this in setup_mode.
          */
         if (conf->stream_motion && !conf->setup_mode && img->shot != 1) 
-            event(cnt, EVENT_STREAM, img->image, NULL, NULL, &img->timestamp_tm);
+            event(cnt, EVENT_STREAM, NULL, NULL, img, &img->timestamp_tm);
 
         /* 
          * Save motion jpeg, if configured 
@@ -555,15 +564,15 @@ static void process_image_ring(struct context *cnt, unsigned int max_images)
 
                 mystrftime(cnt, tmp, sizeof(tmp), "%H%M%S-%q", 
                            &cnt->imgs.image_ring[cnt->imgs.image_ring_out].timestamp_tm, NULL, 0);
-                draw_text(cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, 10, 20, 
-                          cnt->imgs.width, tmp, cnt->conf.text_double);
-                draw_text(cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, 10, 30, 
-                          cnt->imgs.width, t, cnt->conf.text_double);
+                draw_final_image_text(cnt, &cnt->imgs.image_ring[cnt->imgs.image_ring_out], 10, 20,
+                                      tmp, cnt->conf.text_double);
+                draw_final_image_text(cnt, &cnt->imgs.image_ring[cnt->imgs.image_ring_out], 10, 30,
+                                      t, cnt->conf.text_double);
             }
 
             /* Output the picture to jpegs and ffmpeg */
             event(cnt, EVENT_IMAGE_DETECTED,
-                  cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, NULL, NULL, 
+                  NULL, NULL, &cnt->imgs.image_ring[cnt->imgs.image_ring_out],
                   &cnt->imgs.image_ring[cnt->imgs.image_ring_out].timestamp_tm);
 
             /* 
@@ -588,15 +597,15 @@ static void process_image_ring(struct context *cnt, unsigned int max_images)
                             MOTION_LOG(DBG, TYPE_ALL, NO_ERRNO, "%s: Added %d fillerframes into movie", 
                                        frames);
                             sprintf(tmp, "Fillerframes %d", frames);
-                            draw_text(cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, 10, 40, 
-                                      cnt->imgs.width, tmp, cnt->conf.text_double);
+                            draw_final_image_text(cnt, &cnt->imgs.image_ring[cnt->imgs.image_ring_out], 10, 40,
+                                                  tmp, cnt->conf.text_double);
                         }
                     }
                     /* Check how many frames it was last sec */
                     while ((cnt->movie_last_shot + 1) < cnt->movie_fps) {
                         /* Add a filler frame into encoder */
                         event(cnt, EVENT_FFMPEG_PUT,
-                              cnt->imgs.image_ring[cnt->imgs.image_ring_out].image, NULL, NULL, 
+                              NULL, NULL, &cnt->imgs.image_ring[cnt->imgs.image_ring_out],
                               &cnt->imgs.image_ring[cnt->imgs.image_ring_out].timestamp_tm);
 
                         cnt->movie_last_shot++;
@@ -745,12 +754,27 @@ static int motion_init(struct context *cnt)
 
     /* allocate buffer here for preview buffer */
     cnt->imgs.preview_image.image = mymalloc(cnt->imgs.size);
+    cnt->imgs.preview_image.secondary_image = NULL;
 
     /* 
      * Allocate a buffer for temp. usage in some places 
      * Only despeckle & bayer2rgb24() for now for now... 
      */
     cnt->imgs.common_buffer = mymalloc(3 * cnt->imgs.width * cnt->imgs.height);
+
+    if (cnt->imgs.secondary_width) {
+        cnt->imgs.secondary_width_scale = (float)cnt->imgs.secondary_width / (float)cnt->imgs.width;
+    }
+    else {
+        cnt->imgs.secondary_width_scale = 1.0f;
+    }
+
+    if (cnt->imgs.secondary_height) {
+        cnt->imgs.secondary_height_scale = (float)cnt->imgs.secondary_height / (float)cnt->imgs.height;
+    }
+    else {
+        cnt->imgs.secondary_height_scale = 1.0f;
+    }
 
     /* 
      * Now is a good time to init rotation data. Since vid_start has been
@@ -768,7 +792,7 @@ static int motion_init(struct context *cnt)
         int i;
 
         for (i = 0; i < 5; i++) {
-            if (vid_next(cnt, cnt->imgs.image_virgin) == 0)
+            if (vid_next(cnt, cnt->imgs.image_virgin, NULL) == 0)
                 break;
             SLEEP(2, 0);
         }
@@ -1098,6 +1122,7 @@ static void *motion_loop(void *arg)
     unsigned int text_size_factor;
     unsigned int passflag = 0;
     long int *rolling_average_data = NULL;
+    long int *rolling_elapsed_data = NULL;
     long int rolling_average_limit, required_frame_time, frame_delay, delay_time_nsec;
     int rolling_frame = 0;
     struct timeval tv1, tv2;
@@ -1160,11 +1185,13 @@ static void *motion_loop(void *arg)
      */
     rolling_average_limit = 10 * cnt->conf.frame_limit;
     rolling_average_data = mymalloc(sizeof(rolling_average_data) * rolling_average_limit);
+    rolling_elapsed_data = mymalloc(sizeof(rolling_elapsed_data) * rolling_average_limit);
 
     /* Preset history buffer with expected frame rate */
-    for (j = 0; j < rolling_average_limit; j++)
+    for (j = 0; j < rolling_average_limit; j++) {
         rolling_average_data[j] = required_frame_time;
-
+        rolling_elapsed_data[j] = required_frame_time;
+    }
 
     if (cnt->track.type)
         cnt->moved = track_center(cnt, cnt->video_dev, 0, 0, 0);
@@ -1202,12 +1229,13 @@ static void *motion_loop(void *arg)
          * Calculate detection rate limit. Above 5fps we limit the detection
          * rate to 3fps to reduce load at higher framerates. 
          */
-        cnt->process_thisframe = 0;
-        rate_limit++;
-        if (rate_limit >= (cnt->lastrate / 3)) {
-            rate_limit = 0;
-            cnt->process_thisframe = 1;
-        }
+        cnt->process_thisframe = 1;
+// Rate limit disabled as it doesn't help on Pi
+//        rate_limit++;
+//        if (rate_limit >= (cnt->lastrate / 3)) {
+//            rate_limit = 0;
+//            cnt->process_thisframe = 1;
+//        }
 
         /* 
          * Since we don't have sanity checks done when options are set,
@@ -1361,7 +1389,7 @@ static void *motion_loop(void *arg)
              * >0 = non fatal error - copy last image or show grey image with message
              */
             if (cnt->video_dev >= 0)
-                vid_return_code = vid_next(cnt, cnt->current_image->image);
+                vid_return_code = vid_next(cnt, cnt->current_image->image, cnt->current_image);
             else
                 vid_return_code = 1; /* Non fatal error */
 
@@ -1380,8 +1408,12 @@ static void *motion_loop(void *arg)
 
 #ifdef HAVE_FFMPEG
                 /* Deinterlace the image with ffmpeg, before the image is modified. */
-                if (cnt->conf.ffmpeg_deinterlace) 
+                if (cnt->conf.ffmpeg_deinterlace) {
                     ffmpeg_deinterlace(cnt->current_image->image, cnt->imgs.width, cnt->imgs.height);
+                    if (cnt->current_image->secondary_image && cnt->imgs.secondary_type == SECONDARY_TYPE_RAW) {
+                        ffmpeg_deinterlace(cnt->current_image->secondary_image, cnt->imgs.secondary_width, cnt->imgs.secondary_height);
+                    }
+                }
 #endif
 
                 /* 
@@ -1476,8 +1508,8 @@ static void *motion_loop(void *arg)
                     localtime_r(&cnt->connectionlosttime, &tmptime);
                     memset(cnt->current_image->image, 0x80, cnt->imgs.size);
                     mystrftime(cnt, tmpout, sizeof(tmpout), tmpin, &tmptime, NULL, 0);
-                    draw_text(cnt->current_image->image, 10, 20 * text_size_factor, cnt->imgs.width,
-                              tmpout, cnt->conf.text_double);
+                    draw_final_image_text(cnt, cnt->current_image, 10, 20 * text_size_factor,
+                                          tmpout, cnt->conf.text_double);
 
                     /* Write error message only once */
                     if (cnt->missing_frame_counter == MISSING_FRAMES_TIMEOUT * cnt->conf.frame_limit) {
@@ -1714,8 +1746,8 @@ static void *motion_loop(void *arg)
                 else
                     sprintf(tmp, "-");
 
-                draw_text(cnt->current_image->image, cnt->imgs.width - 10, 10, 
-                          cnt->imgs.width, tmp, cnt->conf.text_double);
+                draw_final_image_text(cnt, cnt->current_image, cnt->imgs.width - 10, 10,
+                                      tmp, cnt->conf.text_double);
             }
 
             /* 
@@ -1738,8 +1770,8 @@ static void *motion_loop(void *arg)
                 char tmp[PATH_MAX];
                 mystrftime(cnt, tmp, sizeof(tmp), cnt->conf.text_left, 
                            &cnt->current_image->timestamp_tm, NULL, 0);
-                draw_text(cnt->current_image->image, 10, cnt->imgs.height - 10 * text_size_factor, 
-                          cnt->imgs.width, tmp, cnt->conf.text_double);
+                draw_final_image_text(cnt, cnt->current_image, 10, cnt->imgs.height - 10 * text_size_factor,
+                                      tmp, cnt->conf.text_double);
             }
 
             /* Add text in lower right corner of the pictures */
@@ -1747,9 +1779,8 @@ static void *motion_loop(void *arg)
                 char tmp[PATH_MAX];
                 mystrftime(cnt, tmp, sizeof(tmp), cnt->conf.text_right, 
                            &cnt->current_image->timestamp_tm, NULL, 0);
-                draw_text(cnt->current_image->image, cnt->imgs.width - 10, 
-                          cnt->imgs.height - 10 * text_size_factor,
-                          cnt->imgs.width, tmp, cnt->conf.text_double);
+                draw_final_image_text(cnt, cnt->current_image, cnt->imgs.width - 10, cnt->imgs.height - 10 * text_size_factor,
+                                      tmp, cnt->conf.text_double);
             }
 
 
@@ -2063,7 +2094,7 @@ static void *motion_loop(void *arg)
              */
             if (cnt->shots == 0 && time_current_frame % cnt->conf.timelapse <= 
                 time_last_frame % cnt->conf.timelapse)
-                event(cnt, EVENT_TIMELAPSE, cnt->current_image->image, NULL, NULL, 
+                event(cnt, EVENT_TIMELAPSE, NULL, NULL, cnt->current_image,
                       &cnt->current_image->timestamp_tm);
         } else if (cnt->ffmpeg_timelapse) {
         /* 
@@ -2103,7 +2134,7 @@ static void *motion_loop(void *arg)
                   &cnt->pipe, &cnt->current_image->timestamp_tm);
 
             if (!cnt->conf.stream_motion || cnt->shots == 1)
-                event(cnt, EVENT_STREAM, cnt->current_image->image, NULL, NULL, 
+                event(cnt, EVENT_STREAM, NULL, NULL, cnt->current_image,
                       &cnt->current_image->timestamp_tm);
 #ifdef HAVE_SDL
             if (cnt_list[0]->conf.sdl_threadnr == cnt->threadnr)
@@ -2205,8 +2236,10 @@ static void *motion_loop(void *arg)
          * Update history buffer but ignore first pass as timebefore
          * variable will be inaccurate
          */
-        if (passflag)
+        if (passflag) {
             rolling_average_data[rolling_frame] = timenow-timebefore;
+            rolling_elapsed_data[rolling_frame] = elapsedtime;
+        }
         else
             passflag = 1;
 
@@ -2222,6 +2255,22 @@ static void *motion_loop(void *arg)
 
         rolling_average /= rolling_average_limit;
         frame_delay = required_frame_time-elapsedtime - (rolling_average - required_frame_time);
+
+        if (rolling_frame == 0 || rolling_frame == rolling_average_limit / 2) {
+            int idle_time = 0;
+            int overrun_time = 0;
+            for (j = 0; j < rolling_average_limit; j++)
+                if (rolling_elapsed_data[j] < required_frame_time)
+                    idle_time += required_frame_time - rolling_elapsed_data[j];
+                else
+                    overrun_time += rolling_elapsed_data[j] - required_frame_time;
+
+            float fps = 1000000.0f / (float)rolling_average;
+            float time_range = rolling_average_limit * required_frame_time;
+            float percent_idle = ((float)idle_time / time_range) * 100.0f;
+            float percent_over = ((float)overrun_time / time_range) * 100.0f;
+            MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: fps: %f idle %0.2f%% over %0.2f%%", fps, percent_idle, percent_over);
+        }
 
         if (frame_delay > 0) {
             /* Apply delay to meet frame time */
@@ -2248,6 +2297,8 @@ static void *motion_loop(void *arg)
      * If code continues here it is because the thread is exiting or restarting
      */
 err:
+    if (rolling_elapsed_data)
+        free(rolling_elapsed_data);
     if (rolling_average_data)
         free(rolling_average_data);
 

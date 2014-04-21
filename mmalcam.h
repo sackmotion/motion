@@ -11,6 +11,8 @@
 #ifndef MMALCAM_H_
 #define MMALCAM_H_
 
+#include "mmaloutput.h"
+
 typedef struct mmalcam_context *mmalcam_context_ptr;
 struct MMAL_BUFFER_HEADER_T;
 
@@ -26,13 +28,19 @@ typedef struct mmalcam_context {
 
     struct MMAL_COMPONENT_T *camera_component;
     struct MMAL_PORT_T *camera_capture_port;
-    struct MMAL_POOL_T *camera_buffer_pool;
-    struct MMAL_QUEUE_T *camera_buffer_queue;
     struct RASPICAM_CAMERA_PARAMETERS *camera_parameters;
     struct MMAL_COMPONENT_T *preview_component;
     struct MMAL_CONNECTION_T *preview_connection;
+    struct MMAL_COMPONENT_T *splitter_component;
+    struct MMAL_CONNECTION_T *splitter_connection;
+    struct MMAL_COMPONENT_T *resize_component;
+    struct MMAL_CONNECTION_T *resize_connection;
+    struct MMAL_COMPONENT_T *jpeg_component;
+    struct MMAL_CONNECTION_T *jpeg_connection;
 
-    void (*camera_buffer_callback)(struct MMAL_PORT_T *port, struct MMAL_BUFFER_HEADER_T *buffer);
+    struct mmal_output camera_output;
+    struct mmal_output secondary_output;
+
 } mmalcam_context;
 
 extern void mmalcam_select_as_plugin(struct context *);

@@ -208,6 +208,10 @@
 #define UPDATE_REF_FRAME  1
 #define RESET_REF_FRAME   2
 
+#define SECONDARY_TYPE_NONE 0
+#define SECONDARY_TYPE_RAW  1
+#define SECONDARY_TYPE_JPEG 2
+
 #define BUFSIZE_1MEG      (1024 * 1024)
 
 /* Forward declaration, used in track.h */
@@ -256,6 +260,9 @@ struct image_data {
     struct coord location;      /* coordinates for center and size of last motion detection*/
 
     int total_labels;
+
+    unsigned char *secondary_image;
+    int secondary_size;
 };
 
 /* 
@@ -286,6 +293,8 @@ struct image_data {
 
 /* date/time drawing, draw.c */
 int draw_text(unsigned char *image, unsigned int startx, unsigned int starty, unsigned int width, const char *text, unsigned int factor);
+int draw_final_image_text(struct context* cnt, struct image_data* imgdata, unsigned int startx, unsigned int starty,
+                            const char *text, unsigned int factor);
 int initialize_chars(void);
 
 struct images {
@@ -316,6 +325,13 @@ struct images {
     int labels_above;
     int labelsize_max;
     int largest_label;
+
+    int secondary_type;
+    int secondary_width;
+    int secondary_height;
+    int secondary_size;
+    float secondary_width_scale;
+    float secondary_height_scale;
 };
 
 /* Contains data for image rotation, see rotate.c. */

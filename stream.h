@@ -39,7 +39,8 @@ struct stream {
 };
 
 int stream_init(struct context *);
-void stream_put(struct context *, unsigned char *);
+void stream_put(struct context *, unsigned char *, int, int, int);
+void stream_put_encoded(struct context *cnt, unsigned char *, int, int, int);
 void stream_stop(struct context *);
 
 #endif /* _INCLUDE_STREAM_H_ */

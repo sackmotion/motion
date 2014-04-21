@@ -87,7 +87,7 @@ struct video_dev {
 
 /* video functions, video_common.c */
 int vid_start(struct context *cnt);
-int vid_next(struct context *cnt, unsigned char *map);
+int vid_next(struct context *cnt, unsigned char *map, struct image_data* imgdat);
 void vid_close(struct context *cnt);
 void vid_cleanup(void);
 void vid_init(void);

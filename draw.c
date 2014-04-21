@@ -1167,6 +1167,18 @@ int draw_text(unsigned char *image, unsigned int startx, unsigned int starty, un
     return 0;
 }
 
+int draw_final_image_text(struct context* cnt, struct image_data* imgdata, unsigned int startx, unsigned int starty, const char *text, unsigned int factor)
+{
+    draw_text(imgdata->image, startx, starty, cnt->imgs.width, text, factor);
+
+    if (imgdata->secondary_image  && cnt->imgs.secondary_type == SECONDARY_TYPE_RAW) {
+        draw_text(imgdata->secondary_image, startx * cnt->imgs.secondary_width_scale, starty * cnt->imgs.secondary_height_scale,
+                    cnt->imgs.secondary_width, text, factor);
+    }
+
+    return 0;
+}
+
 /**
  * initialize_chars
  */ 

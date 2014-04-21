@@ -84,14 +84,6 @@ static void camera_control_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
     mmal_buffer_header_release(buffer);
 }
 
-static void camera_buffer_video_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
-{
-    MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: camera_buffer_video_callback - entry");
-    mmalcam_context_ptr mmalcam = (mmalcam_context_ptr) port->userdata;
-    mmal_queue_put(mmalcam->camera_buffer_queue, buffer);
-    MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: camera_buffer_video_callback - exit");
-}
-
 static void set_port_format(int width, int height, MMAL_ES_FORMAT_T *format)
 {
     format->encoding = MMAL_ENCODING_OPAQUE;
@@ -111,20 +103,175 @@ static void set_video_port_format(mmalcam_context_ptr mmalcam, MMAL_ES_FORMAT_T 
     format->es->video.frame_rate.den = VIDEO_FRAME_RATE_DEN;
 }
 
-static MMAL_STATUS_T connect_ports(MMAL_PORT_T *output_port, MMAL_PORT_T *input_port, MMAL_CONNECTION_T **connection)
+static MMAL_STATUS_T connect_ports(MMAL_PORT_T *source_port, MMAL_PORT_T *sink_port, MMAL_CONNECTION_T **connection)
 {
    MMAL_STATUS_T status;
 
-   status =  mmal_connection_create(connection, output_port, input_port, MMAL_CONNECTION_FLAG_TUNNELLING | MMAL_CONNECTION_FLAG_ALLOCATION_ON_INPUT);
+   status =  mmal_connection_create(connection, source_port, sink_port, MMAL_CONNECTION_FLAG_TUNNELLING | MMAL_CONNECTION_FLAG_ALLOCATION_ON_INPUT);
 
-   if (status == MMAL_SUCCESS)
-   {
+   if (status == MMAL_SUCCESS) {
       status =  mmal_connection_enable(*connection);
-      if (status != MMAL_SUCCESS)
+      if (status != MMAL_SUCCESS) {
+         MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: Unable to enable connection: error %d", status);
          mmal_connection_destroy(*connection);
+      }
+   }
+   else {
+       MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: Unable to create connection: error %d", status);
    }
 
    return status;
+}
+
+static int create_splitter_component(mmalcam_context_ptr mmalcam, MMAL_PORT_T *source_port)
+{
+    MMAL_STATUS_T status;
+    MMAL_COMPONENT_T *splitter_component;
+    MMAL_PORT_T *input_port;
+
+    status = mmal_component_create(MMAL_COMPONENT_DEFAULT_VIDEO_SPLITTER, &splitter_component);
+
+    if (status != MMAL_SUCCESS) {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: Failed to create splitter component");
+        goto error;
+    }
+
+    input_port = splitter_component->input[0];
+    mmal_format_copy(input_port->format, source_port->format);
+    input_port->buffer_num = 3;
+    status = mmal_port_format_commit(input_port);
+    if (status != MMAL_SUCCESS)
+    {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s:Couldn't set splitter input port format : error %d", status);
+        goto error;
+    }
+
+    for(int i = 0; i < splitter_component->output_num; i++)
+    {
+        MMAL_PORT_T *output_port = splitter_component->output[i];
+        output_port->buffer_num = 3;
+        mmal_format_copy(output_port->format,input_port->format);
+        status = mmal_port_format_commit(output_port);
+        if (status != MMAL_SUCCESS)
+        {
+            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s:Couldn't set splitter output port format : error %d", status);
+            goto error;
+        }
+    }
+
+    mmalcam->splitter_component = splitter_component;
+    return MMALCAM_OK;
+
+    error:
+    if (splitter_component) {
+        mmal_component_destroy(splitter_component);
+    }
+    return MMALCAM_ERROR;
+}
+
+static int create_resize_component(mmalcam_context_ptr mmalcam, MMAL_PORT_T *source_port, int width, int height)
+{
+    MMAL_STATUS_T status;
+    MMAL_COMPONENT_T *resize_component;
+    MMAL_PORT_T *input_port;
+
+    status = mmal_component_create("vc.ril.resize", &resize_component);
+
+    if (status != MMAL_SUCCESS) {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: Failed to create resize component");
+        goto error;
+    }
+
+    input_port = resize_component->input[0];
+    mmal_format_copy(input_port->format, source_port->format);
+    input_port->buffer_num = 3;
+    status = mmal_port_format_commit(input_port);
+    if (status != MMAL_SUCCESS)
+    {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s:Couldn't set resize input port format : error %d", status);
+        goto error;
+    }
+
+    MMAL_PORT_T *output_port = resize_component->output[0];
+      output_port->buffer_num = 3;
+    mmal_format_copy(output_port->format,input_port->format);
+    output_port->format->es->video.width = width;
+    output_port->format->es->video.height = height;
+    output_port->format->es->video.crop.x = 0;
+    output_port->format->es->video.crop.y = 0;
+    output_port->format->es->video.crop.width = width;
+    output_port->format->es->video.crop.height = height;
+
+    status = mmal_port_format_commit(output_port);
+    if (status != MMAL_SUCCESS)
+    {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s:Couldn't set resize output port format : error %d", status);
+        goto error;
+    }
+
+    mmalcam->resize_component = resize_component;
+    return MMALCAM_OK;
+
+    error:
+    if (resize_component) {
+        mmal_component_destroy(resize_component);
+    }
+    return MMALCAM_ERROR;
+}
+
+static int create_jpeg_component(mmalcam_context_ptr mmalcam)
+{
+    MMAL_STATUS_T status;
+    MMAL_COMPONENT_T *jpeg_component;
+    MMAL_PORT_T *input_port;
+    MMAL_PORT_T *output_port;
+
+    status = mmal_component_create(MMAL_COMPONENT_DEFAULT_IMAGE_ENCODER, &jpeg_component);
+
+    if (status != MMAL_SUCCESS) {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: Failed to create jpeg component");
+        goto error;
+    }
+
+    input_port = jpeg_component->input[0];
+    output_port = jpeg_component->output[0];
+    mmal_format_copy(output_port->format, input_port->format);
+
+    output_port->format->encoding = MMAL_ENCODING_JPEG;
+    output_port->buffer_size = output_port->buffer_size_recommended;
+    output_port->buffer_num = output_port->buffer_num_recommended;
+
+    if (output_port->buffer_size < output_port->buffer_size_min)
+    {
+        output_port->buffer_size = output_port->buffer_size_min;
+    }
+    if (output_port->buffer_num < output_port->buffer_num_min)
+    {
+        output_port->buffer_num = output_port->buffer_num_min;
+    }
+
+    status = mmal_port_format_commit(output_port);
+    if (status != MMAL_SUCCESS)
+    {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s:Couldn't set jpeg output port format : error %d", status);
+        goto error;
+    }
+
+    status = mmal_port_parameter_set_uint32(output_port, MMAL_PARAMETER_JPEG_Q_FACTOR, mmalcam->cnt->conf.mmalcam_buffer2_jpeg);
+    if (status != MMAL_SUCCESS)
+    {
+        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s:Couldn't set jpeg quality : error %d", status);
+        goto error;
+    }
+
+    mmalcam->jpeg_component = jpeg_component;
+    return MMALCAM_OK;
+
+    error:
+    if (jpeg_component) {
+        mmal_component_destroy(jpeg_component);
+    }
+    return MMALCAM_ERROR;
 }
 
 static void destroy_components(mmalcam_context_ptr mmalcam);
@@ -231,8 +378,6 @@ static int create_camera_component(mmalcam_context_ptr mmalcam, const char *mmal
         goto error;
     }
 
-    mmalcam->camera_buffer_callback = camera_buffer_video_callback;
-
     // Ensure there are enough buffers to avoid dropping frames
     if (capture_port->buffer_num < VIDEO_OUTPUT_BUFFERS_NUM) {
         capture_port->buffer_num = VIDEO_OUTPUT_BUFFERS_NUM;
@@ -272,7 +417,6 @@ static int create_camera_component(mmalcam_context_ptr mmalcam, const char *mmal
     mmalcam->camera_component = camera_component;
     mmalcam->preview_component = null_sink;
     mmalcam->camera_capture_port = capture_port;
-    mmalcam->camera_capture_port->userdata = (struct MMAL_PORT_USERDATA_T*) mmalcam;
     MOTION_LOG(NTC, TYPE_VIDEO, NO_ERRNO, "MMAL camera component created");
     return MMALCAM_OK;
 
@@ -288,12 +432,39 @@ static int create_camera_component(mmalcam_context_ptr mmalcam, const char *mmal
 
 static void disable_components_and_ports(mmalcam_context_ptr mmalcam)
 {
-    check_disable_port(mmalcam->camera_component->output[MMAL_CAMERA_VIDEO_PORT]);
-    check_disable_port(mmalcam->camera_component->output[MMAL_CAMERA_STILLS_PORT]);
+    if (mmalcam->jpeg_connection) {
+        mmal_connection_destroy(mmalcam->jpeg_connection);
+        mmalcam->jpeg_connection = NULL;
+    }
+
+    if (mmalcam->splitter_connection) {
+        mmal_connection_destroy(mmalcam->splitter_connection);
+        mmalcam->splitter_connection = NULL;
+    }
+
+    if (mmalcam->resize_connection) {
+        mmal_connection_destroy(mmalcam->resize_connection);
+        mmalcam->resize_connection = NULL;
+    }
 
     if (mmalcam->preview_connection) {
         mmal_connection_destroy(mmalcam->preview_connection);
         mmalcam->preview_connection = NULL;
+    }
+
+    check_disable_port(mmalcam->camera_component->output[MMAL_CAMERA_VIDEO_PORT]);
+    check_disable_port(mmalcam->camera_component->output[MMAL_CAMERA_STILLS_PORT]);
+
+    if (mmalcam->jpeg_component) {
+        mmal_component_disable(mmalcam->jpeg_component);
+    }
+
+    if (mmalcam->splitter_component) {
+        mmal_component_disable(mmalcam->splitter_component);
+    }
+
+    if (mmalcam->resize_component) {
+        mmal_component_disable(mmalcam->resize_component);
     }
 
     if (mmalcam->preview_component) {
@@ -307,6 +478,18 @@ static void disable_components_and_ports(mmalcam_context_ptr mmalcam)
 
 static void destroy_components(mmalcam_context_ptr mmalcam)
 {
+    if (mmalcam->jpeg_component) {
+        mmal_component_destroy(mmalcam->jpeg_component);
+        mmalcam->jpeg_component = NULL;
+    }
+    if (mmalcam->splitter_component) {
+        mmal_component_destroy(mmalcam->splitter_component);
+        mmalcam->splitter_component = NULL;
+    }
+    if (mmalcam->resize_component) {
+        mmal_component_destroy(mmalcam->resize_component);
+        mmalcam->resize_component = NULL;
+    }
     if (mmalcam->preview_component) {
         mmal_component_destroy(mmalcam->preview_component);
         mmalcam->preview_component = NULL;
@@ -314,58 +497,6 @@ static void destroy_components(mmalcam_context_ptr mmalcam)
     if (mmalcam->camera_component) {
         mmal_component_destroy(mmalcam->camera_component);
         mmalcam->camera_component = NULL;
-    }
-}
-
-static int create_camera_buffer_structures(mmalcam_context_ptr mmalcam)
-{
-    mmalcam->camera_buffer_pool = mmal_pool_create(mmalcam->camera_capture_port->buffer_num,
-            mmalcam->camera_capture_port->buffer_size);
-    if (mmalcam->camera_buffer_pool == NULL ) {
-        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera buffer pool creation failed");
-        return MMALCAM_ERROR;
-    }
-
-    mmalcam->camera_buffer_queue = mmal_queue_create();
-    if (mmalcam->camera_buffer_queue == NULL ) {
-        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera buffer queue creation failed");
-        return MMALCAM_ERROR;
-    }
-
-    return MMALCAM_OK;
-}
-
-static int send_pooled_buffers_to_port(MMAL_POOL_T *pool, MMAL_PORT_T *port)
-{
-    int num = mmal_queue_length(pool->queue);
-
-    for (int i = 0; i < num; i++) {
-        MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(pool->queue);
-
-        if (!buffer) {
-            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "Unable to get a required buffer %d from pool queue", i);
-            return MMALCAM_ERROR;
-        }
-
-        if (mmal_port_send_buffer(port, buffer) != MMAL_SUCCESS) {
-            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "Unable to send a buffer to port (%d)", i);
-            return MMALCAM_ERROR;
-        }
-    }
-
-    return MMALCAM_OK;
-}
-
-static void destroy_camera_buffer_structures(mmalcam_context_ptr mmalcam)
-{
-    if (mmalcam->camera_buffer_queue != NULL ) {
-        mmal_queue_destroy(mmalcam->camera_buffer_queue);
-        mmalcam->camera_buffer_queue = NULL;
-    }
-
-    if (mmalcam->camera_buffer_pool != NULL ) {
-        mmal_pool_destroy(mmalcam->camera_buffer_pool);
-        mmalcam->camera_buffer_pool = NULL;
     }
 }
 
@@ -436,15 +567,77 @@ int mmalcam_start(struct context *cnt)
     cnt->imgs.motionsize = mmalcam->width * mmalcam->height;
     cnt->imgs.type = VIDEO_PALETTE_YUV420P;
 
+    if (cnt->conf.mmalcam_buffer2_upscale > 0) {
+        cnt->imgs.secondary_type = SECONDARY_TYPE_RAW;
+        cnt->imgs.secondary_width = mmalcam->width * cnt->conf.mmalcam_buffer2_upscale;
+        cnt->imgs.secondary_height = mmalcam->height * cnt->conf.mmalcam_buffer2_upscale;
+        cnt->imgs.secondary_size = (cnt->imgs.secondary_width * cnt->imgs.secondary_height * 3) / 2;
+
+        mmalcam->width *= cnt->conf.mmalcam_buffer2_upscale;
+        mmalcam->height *= cnt->conf.mmalcam_buffer2_upscale;
+    }
+
     int retval = create_camera_component(mmalcam, cnt->conf.mmalcam_name, capture_mode);
 
-    if (retval == 0) {
-        retval = create_camera_buffer_structures(mmalcam);
+    if (cnt->imgs.secondary_size)
+    {
+        if (retval == 0) {
+            retval = create_splitter_component(mmalcam, mmalcam->camera_capture_port);
+
+            if (retval == 0) {
+                retval = connect_ports(mmalcam->camera_capture_port, mmalcam->splitter_component->input[0], &mmalcam->splitter_connection);
+            }
+        }
+
+        if (retval == 0) {
+            retval = create_resize_component(mmalcam, mmalcam->splitter_component->output[1], cnt->imgs.width, cnt->imgs.height);
+
+            if (retval == 0) {
+                retval = connect_ports(mmalcam->splitter_component->output[1], mmalcam->resize_component->input[0], &mmalcam->resize_connection);
+            }
+        }
+
+        if (retval == 0) {
+            retval = mmal_output_init("mmalcam", &mmalcam->camera_output, mmalcam->resize_component->output[0], 0);
+        }
+
+        if (retval == 0) {
+            if (cnt->conf.mmalcam_buffer2_jpeg > 0) {
+                retval = create_jpeg_component(mmalcam);
+
+                if (retval == 0) {
+                    retval = connect_ports(mmalcam->splitter_component->output[0], mmalcam->jpeg_component->input[0], &mmalcam->jpeg_connection);
+
+                    if (retval == 0) {
+                        retval = mmal_output_init("secondary", &mmalcam->secondary_output, mmalcam->jpeg_component->output[0], MMAL_OUTPUT_INCREMENTAL);
+
+                        if (retval == 0) {
+                            cnt->imgs.secondary_type = SECONDARY_TYPE_JPEG;
+                        }
+                    }
+                }
+            }
+            else {
+                retval = mmal_output_init("secondary", &mmalcam->secondary_output, mmalcam->splitter_component->output[0], 0);
+            }
+        }
+
+        if (retval == 0) {
+            if (mmal_output_enable(&mmalcam->secondary_output)) {
+                MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL resize output enabling failed");
+                retval = MMALCAM_ERROR;
+            }
+        }
+    }
+    else {
+        if (retval == 0) {
+            retval = mmal_output_init("mmalcam", &mmalcam->camera_output, mmalcam->camera_capture_port, 0);
+        }
     }
 
     if (retval == 0) {
-        if (mmal_port_enable(mmalcam->camera_capture_port, mmalcam->camera_buffer_callback)) {
-            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera capture port enabling failed");
+        if (mmal_output_enable(&mmalcam->camera_output)) {
+            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera output enabling failed");
             retval = MMALCAM_ERROR;
         }
     }
@@ -463,7 +656,11 @@ int mmalcam_start(struct context *cnt)
     }
 
     if (retval == 0) {
-        retval = send_pooled_buffers_to_port(mmalcam->camera_buffer_pool, mmalcam->camera_capture_port);
+        retval = mmal_output_send_buffers_to_port(&mmalcam->camera_output);
+    }
+
+    if (retval == 0 && cnt->imgs.secondary_size) {
+        retval = mmal_output_send_buffers_to_port(&mmalcam->secondary_output);
     }
 
     if (retval == 0) {
@@ -502,7 +699,8 @@ void mmalcam_cleanup(struct context *cnt)
     if (mmalcam != NULL ) {
 
         disable_components_and_ports(mmalcam);
-        destroy_camera_buffer_structures(mmalcam);
+        mmal_output_deinit(&mmalcam->camera_output);
+        mmal_output_deinit(&mmalcam->secondary_output);
         destroy_components(mmalcam);
 
         if (mmalcam->camera_parameters) {
@@ -526,11 +724,12 @@ void mmalcam_cleanup(struct context *cnt)
  *
  * Parameters:
  *      cnt             Pointer to the context for this thread
- *      image           Pointer to a buffer for the returned image
+ *      map             Pointer to a buffer for the returned image
+ *      imgdat          Pointer
  *
  * Returns:             Error code
  */
-int mmalcam_next(struct context *cnt, unsigned char *map)
+int mmalcam_next(struct context *cnt, struct image_data* imgdat)
 {
     mmalcam_context_ptr mmalcam;
 
@@ -539,41 +738,14 @@ int mmalcam_next(struct context *cnt, unsigned char *map)
 
     mmalcam = cnt->mmalcam;
 
-    int frame_complete = 0;
-
     MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: mmalcam_next - start");
-    do {
-        MMAL_BUFFER_HEADER_T *camera_buffer = mmal_queue_wait(mmalcam->camera_buffer_queue);
+    mmal_output_process_buffer(&mmalcam->camera_output, imgdat->image, cnt->imgs.size);
 
-        MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: mmalcam_next - got buffer");
-        if (camera_buffer->cmd == 0 && (camera_buffer->flags & MMAL_BUFFER_HEADER_FLAG_FRAME_END)
-                && camera_buffer->length == cnt->imgs.size) {
-            mmal_buffer_header_mem_lock(camera_buffer);
-            memcpy(map, camera_buffer->data, cnt->imgs.size);
-            mmal_buffer_header_mem_unlock(camera_buffer);
-            frame_complete = 1;
-        } else {
-            MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: cmd %d flags %08x size %d/%d at %08x",
-                    camera_buffer->cmd, camera_buffer->flags, camera_buffer->length, camera_buffer->alloc_size, camera_buffer->data);
-        }
+    if (cnt->imgs.secondary_size && imgdat != NULL) {
+        imgdat->secondary_size = mmal_output_process_buffer(&mmalcam->secondary_output, imgdat->secondary_image, cnt->imgs.secondary_size);
+    }
 
-        mmal_buffer_header_release(camera_buffer);
-
-        if (mmalcam->camera_capture_port->is_enabled) {
-            MMAL_STATUS_T status;
-            MMAL_BUFFER_HEADER_T *new_buffer = mmal_queue_get(mmalcam->camera_buffer_pool->queue);
-
-            if (new_buffer) {
-                status = mmal_port_send_buffer(mmalcam->camera_capture_port, new_buffer);
-                MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: mmalcam_next - new buffer returned");
-            }
-
-            if (!new_buffer || status != MMAL_SUCCESS)
-                MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "Unable to return a buffer to the camera capture port");
-        }
-    } while (!frame_complete && mmalcam->camera_capture_port->is_enabled);
-
-    MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: mmalcam_next - buffer loop completed");
+    MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: mmalcam_next - buffer processing completed");
 
     if (mmalcam->cnt->conf.mmalcam_use_still) {
         int curr_time = get_elapsed_time_ms();
@@ -588,18 +760,18 @@ int mmalcam_next(struct context *cnt, unsigned char *map)
                                         mmalcam->camera_parameters->shutter_speed);
         if (mmal_port_parameter_set_boolean(mmalcam->camera_capture_port, MMAL_PARAMETER_CAPTURE, 1)
                 != MMAL_SUCCESS) {
-            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "MMAL camera capture start failed");
+            MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: MMAL camera capture start failed");
         }
 
         mmalcam->last_still_capture_time_ms = curr_time;
     }
 
     if (mmalcam->raw_capture_file) {
-        fwrite(map, 1, cnt->imgs.size, mmalcam->raw_capture_file);
+        fwrite(imgdat->image, 1, cnt->imgs.size, mmalcam->raw_capture_file);
     }
 
     if (cnt->rotate_data.degrees > 0)
-        rotate_map(cnt, map);
+        rotate_map(cnt, imgdat->image);
 
     return 0;
 }

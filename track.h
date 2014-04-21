@@ -9,7 +9,7 @@
 #ifndef _INCLUDE_TRACK_H
 #define _INCLUDE_TRACK_H
 
-#include "alg.h"
+#include "coord.h"
 #include <termios.h>
 
 struct trackoptions {

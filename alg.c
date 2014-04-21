@@ -172,20 +172,66 @@ void alg_locate_center_size(struct images *imgs, int width, int height, struct c
 }
 
 
+static void alg_draw_box(struct coord *cent, unsigned char* new, int width)
+{
+    int width_miny = width * cent->miny;
+    int width_maxy = width * cent->maxy;
+
+    for (int x = cent->minx; x <= cent->maxx; x++) {
+        int width_miny_x = x + width_miny;
+        int width_maxy_x = x + width_maxy;
+
+        new[width_miny_x] =~new[width_miny_x];
+        new[width_maxy_x] =~new[width_maxy_x];
+    }
+
+    for (int y = cent->miny; y <= cent->maxy; y++) {
+        int width_minx_y = cent->minx + y * width;
+        int width_maxx_y = cent->maxx + y * width;
+
+        new[width_minx_y] =~new[width_minx_y];
+        new[width_maxx_y] =~new[width_maxx_y];
+    }
+}
+
+static void alg_draw_cross(struct coord *cent, unsigned char* new, int width)
+{
+    int centy = cent->y * width;
+
+    for (int x = cent->x - 10;  x <= cent->x + 10; x++) {
+        new[centy + x] =~new[centy + x];
+    }
+
+    for (int y = cent->y - 10; y <= cent->y + 10; y++) {
+        new[cent->x + y * width] =~new[cent->x + y * width];
+    }
+}
+
+static void scale_coord(const struct coord* in, struct coord* out, float xfactor, float yfactor)
+{
+    out->x = in->x * xfactor;
+    out->y = in->y * yfactor;
+    out->width = in->width * xfactor;
+    out->height = in->height * yfactor;
+    out->minx = in->minx * xfactor;
+    out->miny = in->miny * yfactor;
+    out->maxx = in->maxx * xfactor;
+    out->maxy = in->maxy * yfactor;
+}
+
 /** 
  * alg_draw_location 
  *      Draws a box around the movement. 
  */
-void alg_draw_location(struct coord *cent, struct images *imgs, int width, unsigned char *new,
+void alg_draw_location(struct coord *cent, struct images *imgs, struct image_data *imgdata,
                        int style, int mode, int process_thisframe)
 {
-    unsigned char *out = imgs->out;
-    int x, y;
-
-    out = imgs->out;
-
     /* Debug image always gets a 'normal' box. */
     if ((mode == LOCATE_BOTH) && process_thisframe) {
+        unsigned char *out = imgs->out;
+        int x, y;
+        int width = imgs->width;
+
         int width_miny = width * cent->miny;
         int width_maxy = width * cent->maxy;
 
@@ -206,65 +252,122 @@ void alg_draw_location(struct coord *cent, struct images *imgs, int width, unsig
         }
     }
     if (style == LOCATE_BOX) { /* Draw a box on normal images. */
-        int width_miny = width * cent->miny;
-        int width_maxy = width * cent->maxy;
-
-        for (x = cent->minx; x <= cent->maxx; x++) {
-            int width_miny_x = x + width_miny;
-            int width_maxy_x = x + width_maxy;
-
-            new[width_miny_x] =~new[width_miny_x];
-            new[width_maxy_x] =~new[width_maxy_x];
-        }
-
-        for (y = cent->miny; y <= cent->maxy; y++) {
-            int width_minx_y = cent->minx + y * width; 
-            int width_maxx_y = cent->maxx + y * width;
-
-            new[width_minx_y] =~new[width_minx_y];
-            new[width_maxx_y] =~new[width_maxx_y];
+        alg_draw_box(cent, imgdata->image, imgs->width);
+        if (imgdata->secondary_image && imgs->secondary_type == SECONDARY_TYPE_RAW) {
+            struct coord cent2;
+            scale_coord(cent, &cent2, imgs->secondary_width_scale, imgs->secondary_height_scale);
+            alg_draw_box(&cent2, imgdata->secondary_image, imgs->secondary_width);
         }
     } else if (style == LOCATE_CROSS) { /* Draw a cross on normal images. */
-        int centy = cent->y * width;
-
-        for (x = cent->x - 10;  x <= cent->x + 10; x++) {
-            new[centy + x] =~new[centy + x];
-            out[centy + x] =~out[centy + x];
+        alg_draw_cross(cent, imgdata->image, imgs->width);
+        if (imgdata->secondary_image && imgs->secondary_type == SECONDARY_TYPE_RAW) {
+            struct coord cent2;
+            scale_coord(cent, &cent2, imgs->secondary_width_scale, imgs->secondary_height_scale);
+            alg_draw_cross(&cent2, imgdata->secondary_image, imgs->secondary_width);
         }
-
-        for (y = cent->y - 10; y <= cent->y + 10; y++) {
-            new[cent->x + y * width] =~new[cent->x + y * width];
-            out[cent->x + y * width] =~out[cent->x + y * width];
-        }       
     }
 }
 
+static void alg_draw_red_box(struct coord *cent, unsigned char* new, int width, int height)
+{
+    int cwidth = width / 2;
+    int width_miny = width * cent->miny;
+    int width_maxy = width * cent->maxy;
+    int cwidth_miny = cwidth * (cent->miny / 2);
+    int cwidth_maxy = cwidth * (cent->maxy / 2);
+    int ysize = width * height;
+    int uvsize = ysize / 4;
+    unsigned char *new_u = new + ysize;
+    unsigned char *new_v = new_u + uvsize;
+
+    for (int x = cent->minx + 2; x <= cent->maxx - 2; x += 2) {
+        int width_miny_x = x + width_miny;
+        int width_maxy_x = x + width_maxy;
+        int cwidth_miny_x = x / 2 + cwidth_miny;
+        int cwidth_maxy_x = x / 2 + cwidth_maxy;
+
+        new_u[cwidth_miny_x] = 128;
+        new_u[cwidth_maxy_x] = 128;
+        new_v[cwidth_miny_x] = 255;
+        new_v[cwidth_maxy_x] = 255;
+
+        new[width_miny_x] = 128;
+        new[width_maxy_x] = 128;
+
+        new[width_miny_x + 1] = 128;
+        new[width_maxy_x + 1] = 128;
+
+        new[width_miny_x + width] = 128;
+        new[width_maxy_x + width] = 128;
+
+        new[width_miny_x + 1 + width] = 128;
+        new[width_maxy_x + 1 + width] = 128;
+    }
+
+    for (int y = cent->miny; y <= cent->maxy; y += 2) {
+        int width_minx_y = cent->minx + y * width;
+        int width_maxx_y = cent->maxx + y * width;
+        int cwidth_minx_y = (cent->minx / 2) + (y / 2) * cwidth;
+        int cwidth_maxx_y = (cent->maxx / 2) + (y / 2) * cwidth;
+
+        new_u[cwidth_minx_y] = 128;
+        new_u[cwidth_maxx_y] = 128;
+        new_v[cwidth_minx_y] = 255;
+        new_v[cwidth_maxx_y] = 255;
+
+        new[width_minx_y] = 128;
+        new[width_maxx_y] = 128;
+
+        new[width_minx_y + width] = 128;
+        new[width_maxx_y + width] = 128;
+
+        new[width_minx_y + 1] = 128;
+        new[width_maxx_y + 1] = 128;
+
+        new[width_minx_y + width + 1] = 128;
+        new[width_maxx_y + width + 1] = 128;
+    }
+}
+
+static void alg_draw_red_cross(struct coord *cent, unsigned char* new, int width, int height)
+{
+    int cwidth = width / 2;
+    int cwidth_maxy = cwidth * (cent->y / 2);
+    int ysize = width * height;
+    int uvsize = ysize / 4;
+    unsigned char *new_u = new + ysize;
+    unsigned char *new_v = new_u + uvsize;
+
+    for (int x = cent->x - 10; x <= cent->x + 10; x += 2) {
+        int cwidth_maxy_x = x / 2 + cwidth_maxy;
+
+        new_u[cwidth_maxy_x] = 128;
+        new_v[cwidth_maxy_x] = 255;
+    }
+
+    for (int y = cent->y - 10; y <= cent->y + 10; y += 2) {
+        int cwidth_minx_y = (cent->x / 2) + (y / 2) * cwidth;
+
+        new_u[cwidth_minx_y] = 128;
+        new_v[cwidth_minx_y] = 255;
+    }
+}
 
 /** 
  * alg_draw_red_location 
  *          Draws a RED box around the movement.
  */
-void alg_draw_red_location(struct coord *cent, struct images *imgs, int width, unsigned char *new,
+void alg_draw_red_location(struct coord *cent, struct images *imgs, struct image_data *imgdata,
                            int style, int mode, int process_thisframe)
 {
-    unsigned char *out = imgs->out;
-    unsigned char *new_u, *new_v;
-    int x, y, v, cwidth, cblock;
-
-    cwidth = width / 2;
-    cblock = imgs->motionsize / 4;
-    x = imgs->motionsize;
-    v = x + cblock;
-    out = imgs->out;
-    new_u = new + x;
-    new_v = new + v;
-
     /* Debug image always gets a 'normal' box. */
     if ((mode == LOCATE_BOTH) && process_thisframe) {
+        unsigned char *out = imgs->out;
+        int width = imgs->width;
         int width_miny = width * cent->miny;
         int width_maxy = width * cent->maxy;
 
-        for (x = cent->minx; x <= cent->maxx; x++) {
+        for (int x = cent->minx; x <= cent->maxx; x++) {
             int width_miny_x = x + width_miny;
             int width_maxy_x = x + width_maxy;
 
@@ -272,7 +375,7 @@ void alg_draw_red_location(struct coord *cent, struct images *imgs, int width, u
             out[width_maxy_x] =~out[width_maxy_x];
         }
 
-        for (y = cent->miny; y <= cent->maxy; y++) {
+        for (int y = cent->miny; y <= cent->maxy; y++) {
             int width_minx_y = cent->minx + y * width; 
             int width_maxx_y = cent->maxx + y * width;
 
@@ -282,73 +385,18 @@ void alg_draw_red_location(struct coord *cent, struct images *imgs, int width, u
     }
 
     if (style == LOCATE_REDBOX) { /* Draw a red box on normal images. */
-        int width_miny = width * cent->miny;
-        int width_maxy = width * cent->maxy;
-        int cwidth_miny = cwidth * (cent->miny / 2);
-        int cwidth_maxy = cwidth * (cent->maxy / 2);
-        
-        for (x = cent->minx + 2; x <= cent->maxx - 2; x += 2) {
-            int width_miny_x = x + width_miny;
-            int width_maxy_x = x + width_maxy;
-            int cwidth_miny_x = x / 2 + cwidth_miny;
-            int cwidth_maxy_x = x / 2 + cwidth_maxy;
-
-            new_u[cwidth_miny_x] = 128;
-            new_u[cwidth_maxy_x] = 128;
-            new_v[cwidth_miny_x] = 255;
-            new_v[cwidth_maxy_x] = 255;
-
-            new[width_miny_x] = 128;
-            new[width_maxy_x] = 128;
-
-            new[width_miny_x + 1] = 128;
-            new[width_maxy_x + 1] = 128;
-
-            new[width_miny_x + width] = 128;
-            new[width_maxy_x + width] = 128;
-
-            new[width_miny_x + 1 + width] = 128;
-            new[width_maxy_x + 1 + width] = 128;
-        }
-
-        for (y = cent->miny; y <= cent->maxy; y += 2) {
-            int width_minx_y = cent->minx + y * width; 
-            int width_maxx_y = cent->maxx + y * width;
-            int cwidth_minx_y = (cent->minx / 2) + (y / 2) * cwidth; 
-            int cwidth_maxx_y = (cent->maxx / 2) + (y / 2) * cwidth;
-
-            new_u[cwidth_minx_y] = 128;
-            new_u[cwidth_maxx_y] = 128;
-            new_v[cwidth_minx_y] = 255;
-            new_v[cwidth_maxx_y] = 255;
-
-            new[width_minx_y] = 128;
-            new[width_maxx_y] = 128;
-
-            new[width_minx_y + width] = 128;
-            new[width_maxx_y + width] = 128;
-
-            new[width_minx_y + 1] = 128;
-            new[width_maxx_y + 1] = 128;
-
-            new[width_minx_y + width + 1] = 128;
-            new[width_maxx_y + width + 1] = 128;
+        alg_draw_red_box(cent, imgdata->image, imgs->width, imgs->height);
+        if (imgdata->secondary_image && imgs->secondary_type == SECONDARY_TYPE_RAW) {
+            struct coord cent2;
+            scale_coord(cent, &cent2, imgs->secondary_width_scale, imgs->secondary_height_scale);
+            alg_draw_red_box(&cent2, imgdata->secondary_image, imgs->secondary_width, imgs->secondary_height);
         }
     } else if (style == LOCATE_REDCROSS) { /* Draw a red cross on normal images. */
-        int cwidth_maxy = cwidth * (cent->y / 2);
-        
-        for (x = cent->x - 10; x <= cent->x + 10; x += 2) {
-            int cwidth_maxy_x = x / 2 + cwidth_maxy;
-
-            new_u[cwidth_maxy_x] = 128;
-            new_v[cwidth_maxy_x] = 255;
-        }
-
-        for (y = cent->y - 10; y <= cent->y + 10; y += 2) {
-            int cwidth_minx_y = (cent->x / 2) + (y / 2) * cwidth; 
-            
-            new_u[cwidth_minx_y] = 128;
-            new_v[cwidth_minx_y] = 255;
+        alg_draw_red_cross(cent, imgdata->image, imgs->width, imgs->height);
+        if (imgdata->secondary_image && imgs->secondary_type == SECONDARY_TYPE_RAW) {
+            struct coord cent2;
+            scale_coord(cent, &cent2, imgs->secondary_width_scale, imgs->secondary_height_scale);
+            alg_draw_red_cross(&cent2, imgdata->secondary_image, imgs->secondary_width, imgs->secondary_height);
         }
     }
 }

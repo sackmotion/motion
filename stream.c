@@ -1080,35 +1080,12 @@ void stream_stop(struct context *cnt)
                " & active motion-stream sockets");
 }
 
-/*
- * stream_put
- *      Is the starting point of the stream loop. It is called from
- *      the motion_loop with the argument 'image' pointing to the latest frame.
- *      If config option 'stream_motion' is 'on' this function is called once
- *      per second (frame 0) and when Motion is detected excl pre_capture.
- *      If config option 'stream_motion' is 'off' this function is called once
- *      per captured picture frame.
- *      It is always run in setup mode for each picture frame captured and with
- *      the special setup image.
- *      The function does two things:
- *          It looks for possible waiting new clients and adds them.
- *          It sends latest picture frame to all connected clients.
- *      Note: Clients that have disconnected are handled in the stream_flush()
- *          function.
- */
-void stream_put(struct context *cnt, unsigned char *image)
+void stream_put_pre(struct context *cnt)
 {
     struct timeval timeout;
-    struct stream_buffer *tmpbuffer;
     fd_set fdread;
     int sl = cnt->stream.socket;
     int sc;
-    /* Tthe following string has an extra 16 chars at end for length. */
-    const char jpeghead[] = "--BoundaryString\r\n"
-                            "Content-type: image/jpeg\r\n"
-                            "Content-Length:                ";
-    int headlength = sizeof(jpeghead) - 1;    /* Don't include terminator. */
-    char len[20];    /* Will be used for sprintf, must be >= 16 */
 
     /*
      * Timeout struct used to timeout the time we wait for a client
@@ -1144,6 +1121,47 @@ void stream_put(struct context *cnt, unsigned char *image)
 
     /* Call flush to send any previous partial-sends which are waiting. */
     stream_flush(&cnt->stream, &cnt->stream_count, cnt->conf.stream_limit);
+}
+
+void stream_put_post(struct context *cnt)
+{
+    /*
+     * Now we call flush again.  This time (assuming some clients were
+     * ready for the new frame) the new data will be written out.
+     */
+    stream_flush(&cnt->stream, &cnt->stream_count, cnt->conf.stream_limit);
+
+    /* Unlock the mutex */
+    if (cnt->conf.stream_auth_method != 0)
+        pthread_mutex_unlock(&stream_auth_mutex);
+}
+
+/*
+ * stream_put
+ *      Is the starting point of the stream loop. It is called from
+ *      the motion_loop with the argument 'image' pointing to the latest frame.
+ *      If config option 'stream_motion' is 'on' this function is called once
+ *      per second (frame 0) and when Motion is detected excl pre_capture.
+ *      If config option 'stream_motion' is 'off' this function is called once
+ *      per captured picture frame.
+ *      It is always run in setup mode for each picture frame captured and with
+ *      the special setup image.
+ *      The function does two things:
+ *          It looks for possible waiting new clients and adds them.
+ *          It sends latest picture frame to all connected clients.
+ *      Note: Clients that have disconnected are handled in the stream_flush()
+ *          function.
+ */
+void stream_put(struct context *cnt, unsigned char *image, int width, int height, int size)
+{
+    struct stream_buffer *tmpbuffer;
+    const char jpeghead[] = "--BoundaryString\r\n"
+                            "Content-type: image/jpeg\r\n"
+                            "Content-Length:                ";
+    int headlength = sizeof(jpeghead) - 1;    /* Don't include terminator. */
+    char len[20];    /* Will be used for sprintf, must be >= 16 */
+
+    stream_put_pre(cnt);
 
     /* Check if any clients have available buffers. */
     if (stream_check_write(&cnt->stream)) {
@@ -1153,7 +1171,7 @@ void stream_put(struct context *cnt, unsigned char *image)
          * than necessary, but it is difficult to estimate the
          * minimum size actually required.
          */
-        tmpbuffer = stream_tmpbuffer(cnt->imgs.size);
+        tmpbuffer = stream_tmpbuffer(size);
 
         /* Check if allocation was ok. */
         if (tmpbuffer) {
@@ -1178,8 +1196,8 @@ void stream_put(struct context *cnt, unsigned char *image)
             wptr += headlength;
 
             /* Create a jpeg image and place into tmpbuffer. */
-            tmpbuffer->size = put_picture_memory(cnt, wptr, cnt->imgs.size, image,
-                                                 cnt->conf.stream_quality);
+            tmpbuffer->size = put_picture_memory(cnt, wptr, size, image,
+                                                 width, height, cnt->conf.stream_quality);
 
             /* Fill in the image length into the header. */
             imgsize = sprintf(len, "%9ld\r\n\r\n", tmpbuffer->size);
@@ -1205,15 +1223,76 @@ void stream_put(struct context *cnt, unsigned char *image)
         }
     }
 
-    /*
-     * Now we call flush again.  This time (assuming some clients were
-     * ready for the new frame) the new data will be written out.
-     */
-    stream_flush(&cnt->stream, &cnt->stream_count, cnt->conf.stream_limit);
+    stream_put_post(cnt);
+}
 
-    /* Unlock the mutex */
-    if (cnt->conf.stream_auth_method != 0)
-        pthread_mutex_unlock(&stream_auth_mutex);
+void stream_put_encoded(struct context *cnt, unsigned char *jpeg_image, int width, int height, int size)
+{
+    struct stream_buffer *tmpbuffer;
+    const char jpeghead[] = "--BoundaryString\r\n"
+                            "Content-type: image/jpeg\r\n"
+                            "Content-Length:                ";
+    int headlength = sizeof(jpeghead) - 1;    /* Don't include terminator. */
+    char len[20];    /* Will be used for sprintf, must be >= 16 */
 
-    return;
+    stream_put_pre(cnt);
+
+    /* Check if any clients have available buffers. */
+    if (stream_check_write(&cnt->stream)) {
+        /*
+         * Yes - create a new tmpbuffer for current image.
+         */
+        tmpbuffer = stream_tmpbuffer(size + headlength + 2);
+
+        /* Check if allocation was ok. */
+        if (tmpbuffer) {
+            int imgsize;
+
+            /*
+             * We need a pointer that points to the picture buffer
+             * just after the mjpeg header. We create a working pointer wptr
+             * to be used in the call to put_picture_memory which we can change
+             * and leave tmpbuffer->ptr intact.
+             */
+            unsigned char *wptr = tmpbuffer->ptr;
+
+            /*
+             * For web protocol, our image needs to be preceded
+             * with a little HTTP, so we put that into the buffer
+             * first.
+             */
+            memcpy(wptr, jpeghead, headlength);
+
+            /* Update our working pointer to point past header. */
+            wptr += headlength;
+
+            /* Create a jpeg image and place into tmpbuffer. */
+            memcpy(wptr, jpeg_image, size);
+            tmpbuffer->size = size;
+
+            /* Fill in the image length into the header. */
+            imgsize = sprintf(len, "%9ld\r\n\r\n", tmpbuffer->size);
+            memcpy(wptr - imgsize, len, imgsize);
+
+            /* Append a CRLF for good measure. */
+            memcpy(wptr + tmpbuffer->size, "\r\n", 2);
+
+            /*
+             * Now adjust tmpbuffer->size to reflect the
+             * header at the beginning and the extra CRLF
+             * at the end.
+             */
+            tmpbuffer->size += headlength + 2;
+
+            /*
+             * And finally put this buffer to all clients with
+             * no outstanding data from previous frames.
+             */
+            stream_add_write(&cnt->stream, tmpbuffer, cnt->conf.stream_maxrate);
+        } else {
+            MOTION_LOG(ERR, TYPE_STREAM, SHOW_ERRNO, "%s: Error creating tmpbuffer");
+        }
+    }
+
+    stream_put_post(cnt);
 }

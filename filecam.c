@@ -32,7 +32,7 @@ int filecam_start (struct context *cnt)
     return 0;
 }
 
-int filecam_next (struct context *cnt, unsigned char *map)
+int filecam_next (struct context *cnt, struct image_data* imgdat)
 {
     if (!cnt || !cnt->filecam) {
         return NETCAM_FATAL_ERROR;
@@ -41,9 +41,9 @@ int filecam_next (struct context *cnt, unsigned char *map)
     filecam_context_ptr filecam = cnt->filecam;
 
     if (filecam->capture_file) {
-        if (fread(map, 1, cnt->imgs.size, filecam->capture_file)) {
+        if (fread(imgdat->image, 1, cnt->imgs.size, filecam->capture_file)) {
             if (cnt->rotate_data.degrees > 0)
-                rotate_map(cnt, map);
+                rotate_map(cnt, imgdat->image);
         }
         else {
             raise(SIGQUIT);

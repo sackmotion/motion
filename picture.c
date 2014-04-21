@@ -880,15 +880,15 @@ void overlay_largest_label(struct context *cnt, unsigned char *out)
  * Returns the dest_image_size if successful. Otherwise 0.
  */
 int put_picture_memory(struct context *cnt, unsigned char* dest_image, int image_size,
-                       unsigned char *image, int quality)
+                       unsigned char *image, int width, int height, int quality)
 {
     switch (cnt->imgs.type) {
     case VIDEO_PALETTE_YUV420P:
         return put_jpeg_yuv420p_memory(dest_image, image_size, image,
-                                       cnt->imgs.width, cnt->imgs.height, quality, cnt, &(cnt->current_image->timestamp_tm), &(cnt->current_image->location));
+                                       width, height, quality, cnt, &(cnt->current_image->timestamp_tm), &(cnt->current_image->location));
     case VIDEO_PALETTE_GREY:
         return put_jpeg_grey_memory(dest_image, image_size, image,
-                                    cnt->imgs.width, cnt->imgs.height, quality);
+                                    width, height, quality);
     default:
         MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "%s: Unknow image type %d",
                    cnt->imgs.type);
@@ -916,6 +916,24 @@ void put_picture_fd(struct context *cnt, FILE *picture, unsigned char *image, in
     }
 }
 
+void put_sized_picture_fd(struct context *cnt, FILE *picture, unsigned char *image, int width, int height, int quality)
+{
+    if (cnt->imgs.picture_type == IMAGE_TYPE_PPM) {
+        put_ppm_bgr24_file(picture, image, width, height);
+    } else {
+        switch (cnt->imgs.type) {
+        case VIDEO_PALETTE_YUV420P:
+            put_jpeg_yuv420p_file(picture, image, width, height, quality, cnt, &(cnt->current_image->timestamp_tm), &(cnt->current_image->location));
+            break;
+        case VIDEO_PALETTE_GREY:
+            put_jpeg_grey_file(picture, image, width, height, quality);
+            break;
+        default:
+            MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "%s: Unknow image type %d",
+                       cnt->imgs.type);
+        }
+    }
+}
 
 void put_picture(struct context *cnt, char *file, unsigned char *image, int ftype)
 {
@@ -939,6 +957,58 @@ void put_picture(struct context *cnt, char *file, unsigned char *image, int ftyp
     }
 
     put_picture_fd(cnt, picture, image, cnt->conf.quality);
+    myfclose(picture);
+    event(cnt, EVENT_FILECREATE, NULL, file, (void *)(unsigned long)ftype, NULL);
+}
+
+void put_sized_picture(struct context *cnt, char *file, unsigned char *image, int width, int height, int ftype)
+{
+    FILE *picture;
+
+    picture = myfopen(file, "w", BUFSIZE_1MEG);
+    if (!picture) {
+        /* Report to syslog - suggest solution if the problem is access rights to target dir. */
+        if (errno ==  EACCES) {
+            MOTION_LOG(ERR, TYPE_ALL, SHOW_ERRNO,
+                       "%s: Can't write picture to file %s - check access rights to target directory\n"
+                       "Thread is going to finish due to this fatal error", file);
+            cnt->finish = 1;
+            cnt->restart = 0;
+            return;
+        } else {
+            /* If target dir is temporarily unavailable we may survive. */
+            MOTION_LOG(ERR, TYPE_ALL, SHOW_ERRNO, "%s: Can't write picture to file %s", file);
+            return;
+        }
+    }
+
+    put_sized_picture_fd(cnt, picture, image, width, height, cnt->conf.quality);
+    myfclose(picture);
+    event(cnt, EVENT_FILECREATE, NULL, file, (void *)(unsigned long)ftype, NULL);
+}
+
+void put_encoded_picture(struct context *cnt, char *file, unsigned char *image, int size, int ftype)
+{
+    FILE *picture;
+
+    picture = myfopen(file, "w", BUFSIZE_1MEG);
+    if (!picture) {
+        /* Report to syslog - suggest solution if the problem is access rights to target dir. */
+        if (errno ==  EACCES) {
+            MOTION_LOG(ERR, TYPE_ALL, SHOW_ERRNO,
+                       "%s: Can't write picture to file %s - check access rights to target directory\n"
+                       "Thread is going to finish due to this fatal error", file);
+            cnt->finish = 1;
+            cnt->restart = 0;
+            return;
+        } else {
+            /* If target dir is temporarily unavailable we may survive. */
+            MOTION_LOG(ERR, TYPE_ALL, SHOW_ERRNO, "%s: Can't write picture to file %s", file);
+            return;
+        }
+    }
+
+    fwrite(image, size, 1, picture);
     myfclose(picture);
     event(cnt, EVENT_FILECREATE, NULL, file, (void *)(unsigned long)ftype, NULL);
 }

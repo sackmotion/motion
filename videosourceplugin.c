@@ -7,6 +7,10 @@
 #include "motion.h"
 
 void video_source_plugins_init(struct context *cnt) {
+    cnt->imgs.secondary_width = 0;
+    cnt->imgs.secondary_height = 0;
+    cnt->imgs.secondary_size = 0;
+
     struct config *conf = &cnt->conf;
 
     if (conf->filecam_path) {

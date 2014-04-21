@@ -31,6 +31,7 @@ struct config {
     int threshold_tune;
     const char *output_pictures;
     int motion_img;
+    int output_secondary_pictures;
     int emulate_motion;
     int event_gap;
     int max_movie_time;
@@ -43,6 +44,7 @@ struct config {
     int quiet;
     int useextpipe; /* ext_pipe on or off */
     const char *extpipe; /* full Command-line for pipe -- must accept YUV420P images  */
+    int extpipe_secondary;
     const char *picture_type;
     int noise;
     int noise_tune;
@@ -60,6 +62,7 @@ struct config {
     int switchfilter;
     int ffmpeg_output;
     int ffmpeg_output_debug;
+    int ffmpeg_output_secondary;
     int ffmpeg_bps;
     int ffmpeg_vbr;
     int ffmpeg_deinterlace;
@@ -71,6 +74,7 @@ struct config {
     int stream_port;
     int stream_quality;
     int stream_motion;
+    int stream_secondary;
     int stream_maxrate;
     int stream_localhost;
     int stream_limit;
@@ -128,7 +132,9 @@ struct config {
     const char *mmalcam_name;
     const char *mmalcam_control_params;
     int mmalcam_use_still;
+    int mmalcam_buffer2_upscale;
     const char *mmalcam_raw_capture_file;
+    int mmalcam_buffer2_jpeg;
 #endif
     int text_changes;
     const char *text_left;

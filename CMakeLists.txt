@@ -109,16 +109,17 @@ add_executable(motion
 				draw.c
 				event.c
 				ffmpeg.c
+				filecam.c
 				jpegutils.c
 				logger.c
 				md5.c
 				mmalcam.c
+				mmaloutput.c
 				motion.c
 				netcam.c
 				netcam_ftp.c
 				netcam_jpeg.c
 				netcam_wget.c
-				filecam.c
 				metrics.c
 				picture.c
 				rotate.c
