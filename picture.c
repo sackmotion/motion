@@ -1127,6 +1127,25 @@ void put_fixed_mask(struct context *cnt, const char *file)
 }
 
 /**
+ * put_image
+ *      save an image to a file, picking appropriate buffer and format based on app configuration.
+ */
+void put_image(struct context *cnt, char* fullfilename, struct image_data * imgdat)
+{
+    if (imgdat->secondary_image && cnt->conf.output_secondary_pictures) {
+        if (cnt->imgs.secondary_type == SECONDARY_TYPE_RAW) {
+            put_sized_picture(cnt, fullfilename, imgdat->secondary_image, cnt->imgs.secondary_width, cnt->imgs.secondary_height, FTYPE_IMAGE);
+        }
+        else if (cnt->imgs.secondary_type == SECONDARY_TYPE_JPEG) {
+            put_encoded_picture(cnt, fullfilename, imgdat->secondary_image, imgdat->secondary_size, FTYPE_IMAGE);
+        }
+    }
+    else {
+        put_picture(cnt, fullfilename, imgdat->image, FTYPE_IMAGE);
+    }
+}
+
+/**
  * preview_save
  *      save preview_shot
  *
@@ -1168,7 +1187,7 @@ void preview_save(struct context *cnt)
 
             previewname[basename_len] = '\0';
             strcat(previewname, imageext(cnt));
-            put_picture(cnt, previewname, cnt->imgs.preview_image.image , FTYPE_IMAGE);
+            put_image(cnt, previewname, &cnt->imgs.preview_image);
         } else {
             /*
              * Save best preview-shot also when no movies are recorded or imagepath
@@ -1187,7 +1206,7 @@ void preview_save(struct context *cnt)
             mystrftime(cnt, filename, sizeof(filename), imagepath, &cnt->imgs.preview_image.timestamp_tm, NULL, 0);
             snprintf(previewname, PATH_MAX, "%s/%s.%s", cnt->conf.filepath, filename, imageext(cnt));
 
-            put_picture(cnt, previewname, cnt->imgs.preview_image.image, FTYPE_IMAGE);
+            put_image(cnt, previewname, &cnt->imgs.preview_image);
         }
 
         /* Restore global context values. */

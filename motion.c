@@ -198,16 +198,21 @@ static void image_ring_destroy(struct context *cnt)
 static void image_save_as_preview(struct context *cnt, struct image_data *img)
 {
     void * image;
+    void * secondary_image;
     /* Save preview image pointer */
     image = cnt->imgs.preview_image.image;
+    secondary_image = cnt->imgs.preview_image.secondary_image;
+
     /* Copy all info */
     memcpy(&cnt->imgs.preview_image.image, img, sizeof(struct image_data));
     /* restore image pointer */
     cnt->imgs.preview_image.image = image;
-    cnt->imgs.preview_image.secondary_image = NULL;
+    cnt->imgs.preview_image.secondary_image = secondary_image;
 
     /* Copy image */
     memcpy(cnt->imgs.preview_image.image, img->image, cnt->imgs.size);
+    if (secondary_image)
+        memcpy(cnt->imgs.preview_image.secondary_image, img->secondary_image, cnt->imgs.secondary_size);
 
     /* 
      * If we set output_all to yes and during the event
@@ -754,7 +759,11 @@ static int motion_init(struct context *cnt)
 
     /* allocate buffer here for preview buffer */
     cnt->imgs.preview_image.image = mymalloc(cnt->imgs.size);
-    cnt->imgs.preview_image.secondary_image = NULL;
+
+    if (cnt->imgs.secondary_size)
+        cnt->imgs.preview_image.secondary_image = mymalloc(cnt->imgs.secondary_size);
+    else
+        cnt->imgs.preview_image.secondary_image = NULL;
 
     /* 
      * Allocate a buffer for temp. usage in some places 

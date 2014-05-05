@@ -331,17 +331,7 @@ static void event_image_detect(struct context *cnt, int type ATTRIBUTE_UNUSED,
         mystrftime(cnt, filename, sizeof(filename), imagepath, currenttime_tm, NULL, 0);
         snprintf(fullfilename, PATH_MAX, "%s/%s.%s", cnt->conf.filepath, filename, imageext(cnt));
 
-        if (imgdat->secondary_image && cnt->conf.output_secondary_pictures) {
-            if (cnt->imgs.secondary_type == SECONDARY_TYPE_RAW) {
-                put_sized_picture(cnt, fullfilename, imgdat->secondary_image, cnt->imgs.secondary_width, cnt->imgs.secondary_height, FTYPE_IMAGE);
-            }
-            else if (cnt->imgs.secondary_type == SECONDARY_TYPE_JPEG) {
-                put_encoded_picture(cnt, fullfilename, imgdat->secondary_image, imgdat->secondary_size, FTYPE_IMAGE);
-            }
-        }
-        else {
-            put_picture(cnt, fullfilename, imgdat->image, FTYPE_IMAGE);
-        }
+        put_image(cnt, fullfilename, imgdat);
     }
 }
 
