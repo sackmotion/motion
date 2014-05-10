@@ -331,7 +331,7 @@ static void event_image_detect(struct context *cnt, int type ATTRIBUTE_UNUSED,
         mystrftime(cnt, filename, sizeof(filename), imagepath, currenttime_tm, NULL, 0);
         snprintf(fullfilename, PATH_MAX, "%s/%s.%s", cnt->conf.filepath, filename, imageext(cnt));
 
-        put_image(cnt, fullfilename, imgdat);
+        put_image(cnt, fullfilename, imgdat, FTYPE_IMAGE);
     }
 }
 
@@ -366,10 +366,11 @@ static void event_imagem_detect(struct context *cnt, int type ATTRIBUTE_UNUSED,
 }
 
 static void event_image_snapshot(struct context *cnt, int type ATTRIBUTE_UNUSED,
-            unsigned char *img, char *dummy1 ATTRIBUTE_UNUSED,
-            void *dummy2 ATTRIBUTE_UNUSED, struct tm *currenttime_tm)
+            unsigned char *dummy1 ATTRIBUTE_UNUSED, char * dummy2 ATTRIBUTE_UNUSED,
+            void *eventdata, struct tm *currenttime_tm)
 {
     char fullfilename[PATH_MAX];
+    struct image_data * imgdat = (struct image_data*) eventdata;
 
     if (strcmp(cnt->conf.snappath, "lastsnap")) {
         char filename[PATH_MAX];
@@ -388,7 +389,7 @@ static void event_image_snapshot(struct context *cnt, int type ATTRIBUTE_UNUSED,
         mystrftime(cnt, filepath, sizeof(filepath), snappath, currenttime_tm, NULL, 0);
         snprintf(filename, PATH_MAX, "%s.%s", filepath, imageext(cnt));
         snprintf(fullfilename, PATH_MAX, "%s/%s", cnt->conf.filepath, filename);
-        put_picture(cnt, fullfilename, img, FTYPE_IMAGE_SNAPSHOT);
+        put_image(cnt, fullfilename, imgdat, FTYPE_IMAGE_SNAPSHOT);
 
         /*
          *  Update symbolic link *after* image has been written so that
@@ -405,7 +406,7 @@ static void event_image_snapshot(struct context *cnt, int type ATTRIBUTE_UNUSED,
     } else {
         snprintf(fullfilename, PATH_MAX, "%s/lastsnap.%s", cnt->conf.filepath, imageext(cnt));
         remove(fullfilename);
-        put_picture(cnt, fullfilename, img, FTYPE_IMAGE_SNAPSHOT);
+        put_image(cnt, fullfilename, imgdat, FTYPE_IMAGE_SNAPSHOT);
     }
 
     cnt->snapshot = 0;

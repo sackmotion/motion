@@ -2038,7 +2038,7 @@ static void *motion_loop(void *arg)
         if ((cnt->conf.snapshot_interval > 0 && cnt->shots == 0 &&
              time_current_frame % cnt->conf.snapshot_interval <= time_last_frame % cnt->conf.snapshot_interval) ||
              cnt->snapshot) {
-            event(cnt, EVENT_IMAGE_SNAPSHOT, cnt->current_image->image, NULL, NULL, &cnt->current_image->timestamp_tm);
+            event(cnt, EVENT_IMAGE_SNAPSHOT, NULL, NULL, cnt->current_image, &cnt->current_image->timestamp_tm);
             cnt->snapshot = 0;
         }
 
