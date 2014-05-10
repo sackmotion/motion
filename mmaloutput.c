@@ -113,11 +113,16 @@ size_t mmal_output_process_buffer(mmal_output* output, void* dest, size_t size)
                 }
             }
         } else if (buffer->cmd == 0 && (buffer->flags & MMAL_BUFFER_HEADER_FLAG_FRAME_END)) {
-            if (buffer->length == size && dest != NULL) {
-                mmal_buffer_header_mem_lock(buffer);
-                memcpy(dest, buffer->data, size);
-                mmal_buffer_header_mem_unlock(buffer);
-                buffer_progress = buffer->length;
+            if (dest != NULL) {
+                if (buffer->length == size) {
+                    mmal_buffer_header_mem_lock(buffer);
+                    memcpy(dest, buffer->data, size);
+                    mmal_buffer_header_mem_unlock(buffer);
+                    buffer_progress = buffer->length;
+                }
+                else {
+                    MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO, "%s: Output %s - buffer size %d does not match destination %d", output->name, buffer->length, size);
+                }
             }
             buffer_complete = 1;
         }

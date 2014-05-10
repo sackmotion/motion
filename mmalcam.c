@@ -539,6 +539,14 @@ int mmalcam_start(struct context *cnt)
     mmalcam->height = cnt->conf.height;
     mmalcam->framerate = cnt->conf.frame_limit;
 
+    if (mmalcam->width & 15) {
+        mmalcam->width += 16 - (mmalcam->width & 15);
+    }
+
+    if (mmalcam->height & 15) {
+        mmalcam->height += 16 - (mmalcam->height & 15);
+    }
+
     if (cnt->conf.mmalcam_control_params) {
         parse_camera_control_params(cnt->conf.mmalcam_control_params, mmalcam->camera_parameters);
     }
