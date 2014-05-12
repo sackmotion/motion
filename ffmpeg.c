@@ -421,6 +421,15 @@ static AVOutputFormat *get_oformat(const char *codec, char *filename)
 #else
       of = av_guess_format ("ogg", NULL, NULL);
 #endif
+	}
+  else if (strcmp (codec, "web") == 0)
+    {
+      ext = ".webm";
+#ifdef GUESS_NO_DEPRECATED
+      of = guess_format ("webm", NULL, NULL);
+#else
+      of = av_guess_format ("webm", NULL, NULL);
+#endif
     } else {
         MOTION_LOG(ERR, TYPE_ENCODER, NO_ERRNO, "%s: ffmpeg_video_codec option value"
                    " %s is not supported", codec);
@@ -434,7 +443,7 @@ static AVOutputFormat *get_oformat(const char *codec, char *filename)
     }
 
     /* The 4 allows for ".avi" or ".mpg" to be appended. */
-    strncat(filename, ext, 4);
+    strncat(filename, ext, 5);
 
     return of;
 }
