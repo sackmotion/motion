@@ -184,6 +184,7 @@ int rtsp_connect(netcam_context_ptr netcam)
   AVDictionary *opts = 0;
   av_dict_set(&opts, "rtsp_transport", "tcp", 0);
 
+  avformat_network_init();
   int ret = avformat_open_input(&netcam->rtsp->format_context, netcam->rtsp->path, NULL, &opts);
   if (ret < 0) {
     MOTION_LOG(ALR, TYPE_NETCAM, NO_ERRNO, "%s: unable to open input(%s): %d - %s", netcam->rtsp->path, ret, av_err2str(ret));

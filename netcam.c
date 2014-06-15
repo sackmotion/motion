@@ -2417,8 +2417,9 @@ static int netcam_setup_ftp(netcam_context_ptr netcam, struct url_t *url)
 static int netcam_setup_rtsp(netcam_context_ptr netcam, struct url_t *url)
 {
   struct context *cnt = netcam->cnt;
-  const char *ptr;
-  
+  const char *auth_ptr = NULL;
+  int ix=0;
+
   netcam->caps.streaming = NCS_RTSP;
   netcam->rtsp = rtsp_new_context();
 
@@ -2426,12 +2427,7 @@ static int netcam_setup_rtsp(netcam_context_ptr netcam, struct url_t *url)
     MOTION_LOG(ERR, TYPE_NETCAM, NO_ERRNO, "%s: unable to create rtsp context");
     return -1;
   }
-  
-  /*
-   * Allocate space for a working string to contain the path.
-   * The extra 5 is for "://", ":" and string terminator.
-   */
-  
+
   // force port to a sane value
   if (netcam->connect_port > 65536) {
     netcam->connect_port = 65536;
@@ -2439,32 +2435,30 @@ static int netcam_setup_rtsp(netcam_context_ptr netcam, struct url_t *url)
     netcam->connect_port = 0;
   }
 
-  ptr = mymalloc(strlen(url->service) + strlen(netcam->connect_host)
-		 + 5 + strlen(url->path) + 5);
-  sprintf((char *)ptr, "%s://%s:%d%s", url->service,
-	  netcam->connect_host, netcam->connect_port, url->path);
-  
-  netcam->rtsp->path = (char *)ptr;
-  
+  /* The ffmpeg rtsp code expects the auth info to be part of the URL */
+
   if (cnt->conf.netcam_userpass != NULL) {
-    ptr = cnt->conf.netcam_userpass;
+    auth_ptr = cnt->conf.netcam_userpass;
   } else {
-    ptr = url->userpass;  /* Don't set this one NULL, gets freed. */
-  }
-  
-  if (ptr != NULL) {
-    char *cptr;
-    
-    if ((cptr = strchr(ptr, ':')) == NULL) {
-      netcam->rtsp->user = mystrdup(ptr);
-    } else {
-      netcam->rtsp->user = mymalloc((cptr - ptr));
-      memcpy(netcam->rtsp->user, ptr,(cptr - ptr));
-      netcam->rtsp->pass = mystrdup(cptr + 1);
-    }
+    auth_ptr = url->userpass;  /* Don't set this one NULL, gets freed. */
   }
 
+  /* Extra space to allocate for :// and auth */
+  ix = 5;
+  if (auth_ptr) {
+      ix += 1 + strlen(auth_ptr);
+  }
+  ix += strlen(url->service) + strlen(netcam->connect_host) + strlen(url->path);
+
+  netcam->rtsp->path = mymalloc(ix);
+  sprintf(netcam->rtsp->path, "%s://%s%s%s:%d%s",
+          url->service,
+          auth_ptr ? auth_ptr:"", auth_ptr ? "@":"",
+          netcam->connect_host,
+          netcam->connect_port,
+          url->path);
   netcam_url_free(url);
+  MOTION_LOG(DBG, TYPE_NETCAM, NO_ERRNO, "%s: rtsp->path = %s", netcam->rtsp->path);
 
   /*
    * The RTSP context should be all ready to attempt a connection with
