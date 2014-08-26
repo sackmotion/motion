@@ -2470,7 +2470,9 @@ static int netcam_setup_rtsp(netcam_context_ptr netcam, struct url_t *url)
    * The RTSP context should be all ready to attempt a connection with
    * the server, so we try ....
    */
-  rtsp_connect(netcam);
+  if (rtsp_connect(netcam) < 0) {
+    return -1;
+  }
 
   netcam->get_image = netcam_read_rtsp_image;
 
