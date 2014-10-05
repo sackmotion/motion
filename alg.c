@@ -14,6 +14,12 @@
 #include "mmx.h"
 #endif
 
+#ifdef __SSE2__
+#define HAVE_SSE2
+#include <emmintrin.h>
+#include "alg/sse2.h"
+#endif
+
 #define MAX2(x, y) ((x) > (y) ? (x) : (y))
 #define MAX3(x, y, z) ((x) > (y) ? ((x) > (z) ? (x) : (z)) : ((y) > (z) ? (y) : (z)))
 
@@ -352,42 +358,23 @@ void alg_draw_red_location(struct coord *cent, struct images *imgs, int width, u
 #define DIFF(x, y)         (ABS((x)-(y)))
 #define NDIFF(x, y)        (ABS(x) * NORM / (ABS(x) + 2 * DIFF(x, y)))
 
+#ifdef HAVE_SSE2
+#include "alg/alg_noise_tune.sse2.c"
+#else
+#include "alg/alg_noise_tune.plain.c"
+#endif
+
 /**
  * alg_noise_tune
  *
  */
 void alg_noise_tune(struct context *cnt, unsigned char *new)
 {
-    struct images *imgs = &cnt->imgs;
-    int i;
-    unsigned char *ref = imgs->ref;
-    int diff, sum = 0, count = 0;
-    unsigned char *mask = imgs->mask;
-    unsigned char *smartmask = imgs->smartmask_final;
-
-    i = imgs->motionsize;
-            
-    for (; i > 0; i--) {
-        diff = ABS(*ref - *new);
-
-        if (mask)
-            diff = ((diff * *mask++) / 255);
-
-        if (*smartmask) {
-            sum += diff + 1;
-            count++;
-        }
-
-        ref++;
-        new++;
-        smartmask++;
-    }
-
-    if (count > 3)  /* Avoid divide by zero. */
-        sum /= count / 3;
-    
-    /* 5: safe, 4: regular, 3: more sensitive */
-    cnt->noise = 4 + (cnt->noise + sum) / 2;
+#ifdef HAVE_SSE2
+    alg_noise_tune_sse2(cnt, new);
+#else
+    alg_noise_tune_plain(cnt, new);
+#endif
 }
 
 /**
@@ -1301,6 +1288,15 @@ int alg_switchfilter(struct context *cnt, int diffs, unsigned char *newimg)
     return 0;
 }
 
+#define ACCEPT_STATIC_OBJECT_TIME 10  /* Seconds */
+#define EXCLUDE_LEVEL_PERCENT 20
+
+#ifdef HAVE_SSE2
+#include "alg/alg_update_reference_frame.sse2.c"
+#else
+#include "alg/alg_update_reference_frame.plain.c"
+#endif
+
 /** 
  * alg_update_reference_frame
  *
@@ -1314,55 +1310,11 @@ int alg_switchfilter(struct context *cnt, int diffs, unsigned char *newimg)
  *   action - UPDATE_REF_FRAME or RESET_REF_FRAME
  *
  */
-#define ACCEPT_STATIC_OBJECT_TIME 10  /* Seconds */
-#define EXCLUDE_LEVEL_PERCENT 20
 void alg_update_reference_frame(struct context *cnt, int action) 
 {
-    int accept_timer = cnt->lastrate * ACCEPT_STATIC_OBJECT_TIME;
-    int i, threshold_ref;
-    int *ref_dyn = cnt->imgs.ref_dyn;
-    unsigned char *image_virgin = cnt->imgs.image_virgin;
-    unsigned char *ref = cnt->imgs.ref;
-    unsigned char *smartmask = cnt->imgs.smartmask_final;
-    unsigned char *out = cnt->imgs.out;
-
-    if (cnt->lastrate > 5)  /* Match rate limit */
-        accept_timer /= (cnt->lastrate / 3);
-
-    if (action == UPDATE_REF_FRAME) { /* Black&white only for better performance. */
-        threshold_ref = cnt->noise * EXCLUDE_LEVEL_PERCENT / 100;
-
-        for (i = cnt->imgs.motionsize; i > 0; i--) {
-            /* Exclude pixels from ref frame well below noise level. */
-            if (((int)(abs(*ref - *image_virgin)) > threshold_ref) && (*smartmask)) {
-                if (*ref_dyn == 0) { /* Always give new pixels a chance. */
-                    *ref_dyn = 1;
-                } else if (*ref_dyn > accept_timer) { /* Include static Object after some time. */
-                    *ref_dyn = 0;
-                    *ref = *image_virgin;
-                } else if (*out) {
-                    (*ref_dyn)++; /* Motionpixel? Keep excluding from ref frame. */
-                } else {
-                    *ref_dyn = 0; /* Nothing special - release pixel. */
-                    *ref = (*ref + *image_virgin) / 2;
-                }
-
-            } else {  /* No motion: copy to ref frame. */
-                *ref_dyn = 0; /* Reset pixel */
-                *ref = *image_virgin;
-            }
-
-            ref++;
-            image_virgin++;
-            smartmask++;
-            ref_dyn++;
-            out++;
-        } /* end for i */
-
-    } else {   /* action == RESET_REF_FRAME - also used to initialize the frame at startup. */
-        /* Copy fresh image */
-        memcpy(cnt->imgs.ref, cnt->imgs.image_virgin, cnt->imgs.size);
-        /* Reset static objects */
-        memset(cnt->imgs.ref_dyn, 0, cnt->imgs.motionsize * sizeof(cnt->imgs.ref_dyn)); 
-    }
+#ifdef HAVE_SSE2
+    alg_update_reference_frame_sse2(cnt, action);
+#else
+    alg_update_reference_frame_plain(cnt, action);
+#endif
 }
