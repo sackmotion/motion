@@ -9,7 +9,7 @@ to build the code. Generated code files have been pre-created
 using the original's configure script (see config.h).
 
 Downloading: a temporary prebuilt binary for Raspberry Pi is available at this link:
-https://www.dropbox.com/s/xdfcxm5hu71s97d/motion-mmal.tar.gz
+https://www.dropbox.com/s/jw5r1wss32tdibb/motion-mmal-opt.tar.gz
 
 Known working resolutions:
 
