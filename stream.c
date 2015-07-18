@@ -924,22 +924,6 @@ static void stream_flush(struct stream *list, int *stream_count, int lim)
 }
 
 /**
- * stream_tmpbuffer
- *      Routine to create a new "tmpbuffer", which is a common
- *      object used by all clients connected to a single camera.
- *
- * Returns: new allocated stream_buffer.
- */
-static struct stream_buffer *stream_tmpbuffer(int size)
-{
-    struct stream_buffer *tmpbuffer = mymalloc(sizeof(struct stream_buffer));
-    tmpbuffer->ref = 0;
-    tmpbuffer->ptr = mymalloc(size);
-
-    return tmpbuffer;
-}
-
-/**
  * stream_add_client
  *
  *
@@ -1027,6 +1011,21 @@ static int stream_check_write(struct stream *list)
     return 0;
 }
 
+/**
+ * stream_tmpbuffer
+ *      Routine to create a new "tmpbuffer", which is a common
+ *      object used by all clients connected to a single camera.
+ *
+ * Returns: new allocated stream_buffer.
+ */
+struct stream_buffer* stream_tmpbuffer(int size)
+{
+    struct stream_buffer *tmpbuffer = mymalloc(sizeof(struct stream_buffer));
+    tmpbuffer->ref = 0;
+    tmpbuffer->ptr = mymalloc(size);
+
+    return tmpbuffer;
+}
 
 /**
  * stream_init
