@@ -11,6 +11,7 @@
  *
  */
 #include "webhttpd.h"    /* already includes motion.h */
+#include "event.h"
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -987,6 +988,30 @@ static unsigned int action(char *pointer, char *res, unsigned int length_uri,
                 send_template_ini_client_raw(client_socket);
                 sprintf(res, "snapshot for thread %hu\nDone\n", thread);
                 send_template_raw(client_socket, res);
+            }
+        } else {
+            /* error */
+            if (cnt[0]->conf.webcontrol_html_output)
+                response_client(client_socket, not_found_response_valid_command, NULL);
+            else
+                response_client(client_socket, not_found_response_valid_command_raw, NULL);
+        }
+    } else if (!strcmp(command, "preview")) {
+        pointer = pointer + 7;
+        length_uri = length_uri - 7;
+
+    	struct stream_buffer *tmpbuffer;
+    	tmpbuffer = stream_tmpbuffer(cnt[thread]->imgs.size);
+
+    	if (length_uri == 0) {
+            /* call preview */
+        	event(cnt[thread], EVENT_IMAGE_PREVIEW, cnt[thread]->current_image->image, NULL, tmpbuffer, NULL);
+        	write(client_socket,
+        		                          tmpbuffer->ptr,
+        		                          tmpbuffer->size);
+            if (tmpbuffer->ref <= 0) {
+                free(tmpbuffer->ptr);
+                free(tmpbuffer);
             }
         } else {
             /* error */
@@ -2049,6 +2074,7 @@ static unsigned int handle_get(int client_socket, const char *url, void *userdat
                                              "<b>Thread %hd</b><br>\n"
                                              "<a href=/%hd/action/makemovie>makemovie</a><br>\n"
                                              "<a href=/%hd/action/snapshot>snapshot</a><br>\n"
+                                		     "<a href=/%hd/action/preview>preview</a><br>\n"
                                              "<a href=/%hd/action/restart>restart</a><br>\n"
                                              "<a href=/%hd/action/quit>quit</a><br>\n",
                                              thread, thread, thread, thread, thread, thread);

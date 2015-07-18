@@ -41,5 +41,6 @@ struct stream {
 int stream_init(struct context *);
 void stream_put(struct context *, unsigned char *);
 void stream_stop(struct context *);
+struct stream_buffer* stream_tmpbuffer(int);
 
 #endif /* _INCLUDE_STREAM_H_ */
