@@ -996,29 +996,29 @@ static unsigned int action(char *pointer, char *res, unsigned int length_uri,
                 response_client(client_socket, not_found_response_valid_command_raw, NULL);
         }
     } else if (!strcmp(command, "preview")) {
-        pointer = pointer + 7;
-        length_uri = length_uri - 7;
+		pointer = pointer + 7;
+		length_uri = length_uri - 7;
 
-    	struct stream_buffer *tmpbuffer;
-    	tmpbuffer = stream_tmpbuffer(cnt[thread]->imgs.size);
-
-    	if (length_uri == 0) {
-            /* call preview */
-        	event(cnt[thread], EVENT_IMAGE_PREVIEW, cnt[thread]->current_image->image, NULL, tmpbuffer, NULL);
-        	write(client_socket,
-        		                          tmpbuffer->ptr,
-        		                          tmpbuffer->size);
-            if (tmpbuffer->ref <= 0) {
-                free(tmpbuffer->ptr);
-                free(tmpbuffer);
-            }
-        } else {
-            /* error */
-            if (cnt[0]->conf.webcontrol_html_output)
-                response_client(client_socket, not_found_response_valid_command, NULL);
-            else
-                response_client(client_socket, not_found_response_valid_command_raw, NULL);
-        }
+		struct stream_buffer *tmpbuffer;
+		tmpbuffer = stream_tmpbuffer(cnt[thread]->imgs.size);
+		/* No check of length_uri to allow supplemental argument to force refresh of image in HTML */
+		/* call preview */
+		if (sizeof(cnt) == 1 || thread > 0) {
+			event(cnt[thread], EVENT_IMAGE_PREVIEW,
+					cnt[thread]->current_image->image, NULL, tmpbuffer, NULL);
+			write(client_socket, tmpbuffer->ptr, tmpbuffer->size);
+			if (tmpbuffer->ref <= 0) {
+				free(tmpbuffer->ptr);
+				free(tmpbuffer);
+			}
+		} else {
+			if (cnt[0]->conf.webcontrol_html_output)
+				response_client(client_socket, not_found_response_valid_command,
+						NULL);
+			else
+				response_client(client_socket,
+						not_found_response_valid_command_raw, NULL);
+		}
     } else if (!strcmp(command, "restart")) {
         pointer = pointer + 7;
         length_uri = length_uri - 7;
