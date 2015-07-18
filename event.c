@@ -391,6 +391,45 @@ static void event_image_snapshot(struct context *cnt, int type ATTRIBUTE_UNUSED,
     cnt->snapshot = 0;
 }
 
+static void event_image_preview(struct context *cnt, int type ATTRIBUTE_UNUSED,
+            unsigned char *img, char *dummy1 ATTRIBUTE_UNUSED,
+            void *buffer, struct tm *currenttime_tm)
+{
+	struct stream_buffer *tmpbuffer;
+	tmpbuffer = buffer;
+	cnt->imgs.type = VIDEO_PALETTE_YUV420P;
+
+    /* Check if allocation was ok. */
+    if (tmpbuffer) {
+        int imgsize;
+
+        /*
+         * We need a pointer that points to the picture buffer
+         * just after the mjpeg header. We create a working pointer wptr
+         * to be used in the call to put_picture_memory which we can change
+         * and leave tmpbuffer->ptr intact.
+         */
+        unsigned char *wptr = tmpbuffer->ptr;
+
+        /* Create a jpeg image and place into tmpbuffer. */
+        tmpbuffer->size = put_picture_memory(cnt, wptr, cnt->imgs.size, img,
+                                             cnt->conf.quality);
+
+        /* Append a CRLF for good measure. */
+        memcpy(wptr + tmpbuffer->size, "\r\n", 2);
+
+        /*
+         * Now adjust tmpbuffer->size to reflect the
+         * header at the beginning and the extra CRLF
+         * at the end.
+         */
+        tmpbuffer->size += 2;
+    } else {
+        MOTION_LOG(ERR, TYPE_STREAM, SHOW_ERRNO, "%s: Error creating tmpbuffer");
+    }
+}
+
+
 static void event_camera_lost(struct context *cnt, int type ATTRIBUTE_UNUSED,
             unsigned char *img ATTRIBUTE_UNUSED, char *dummy1 ATTRIBUTE_UNUSED,
             void *dummy2 ATTRIBUTE_UNUSED, struct tm *currenttime_tm ATTRIBUTE_UNUSED)
@@ -827,6 +866,10 @@ struct event_handlers event_handlers[] = {
     EVENT_IMAGE_SNAPSHOT,
     event_image_snapshot
     },
+	{
+	EVENT_IMAGE_PREVIEW,
+	event_image_preview
+	},
 #ifdef HAVE_SDL
     {
     EVENT_SDL_PUT,
