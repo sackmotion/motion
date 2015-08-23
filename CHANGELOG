@@ -49,6 +49,8 @@ Features
      http://www.lavrsen.dk/foswiki/bin/view/Motion/OggTimelapse (Michael Luich)
    * Added support for ffmpeg 0.11 new API.
    * Added RSTP support for netcam ( merge https://github.com/hyperbolic2346/motion )
+   * Allow text format specifiers to take a width like printf would.  (David Fries)
+   * Add power_line_frequency configuration item to improve image quality.  (David Fries)
 
 Bugfixes
    * Avoid segfault detecting strerror_r() version GNU or SUSv3. (Angel Carpintero)
@@ -84,6 +86,7 @@ Bugfixes
    * Fixed leak in vloopback.
    * Fixed a build of motion for some kernel version with not good videodev.h 
    * Netcam Modulo 8
+   * Fix webhttpd race condition crash with SIGHUP, add it to running thread counter (David Fries)
 
 3.2.12 Summary of Changes
 
