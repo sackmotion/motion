@@ -526,6 +526,8 @@ static int alg_labeling(struct context *cnt)
     int height = imgs->height;
     int labelsize = 0;
     int current_label = 2;
+    /* Keep track of the area just under the threshold.  */
+    int max_under = 0;
 
     cnt->current_image->total_labels = 0;
     imgs->labelsize_max = 0;
@@ -534,7 +536,7 @@ static int alg_labeling(struct context *cnt)
     imgs->labels_above = 0;
 
     /* Init: 0 means no label set / not checked. */
-    memset(labels, 0, width * height * sizeof(labels));
+    memset(labels, 0, width * height * sizeof(*labels));
     pixelpos = 0;
 
     for (iy = 0; iy < height - 1; iy++) {
@@ -561,7 +563,8 @@ static int alg_labeling(struct context *cnt)
                     labelsize = iflood(ix, iy, width, height, out, labels, current_label + 32768, current_label);
                     imgs->labelgroup_max += labelsize;
                     imgs->labels_above++;
-                }
+                } else if(max_under < labelsize)
+                    max_under = labelsize;
                 
                 if (imgs->labelsize_max < labelsize) {
                     imgs->labelsize_max = labelsize;
@@ -579,8 +582,11 @@ static int alg_labeling(struct context *cnt)
                "Largest Label: %i", imgs->largest_label, imgs->labelsize_max, 
                cnt->current_image->total_labels);
     
-    /* Return group of significant labels. */
-    return imgs->labelgroup_max;
+    /* Return group of significant labels or if that's none, the next largest
+     * group (which is under the threshold, but especially for setup gives an
+     * idea how close it was).
+     */
+    return imgs->labelgroup_max ? imgs->labelgroup_max : max_under;
 }
 
 /** 
@@ -1363,6 +1369,6 @@ void alg_update_reference_frame(struct context *cnt, int action)
         /* Copy fresh image */
         memcpy(cnt->imgs.ref, cnt->imgs.image_virgin, cnt->imgs.size);
         /* Reset static objects */
-        memset(cnt->imgs.ref_dyn, 0, cnt->imgs.motionsize * sizeof(cnt->imgs.ref_dyn)); 
+        memset(cnt->imgs.ref_dyn, 0, cnt->imgs.motionsize * sizeof(*cnt->imgs.ref_dyn));
     }
 }

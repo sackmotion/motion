@@ -265,6 +265,7 @@ struct my_error_mgr {
 
 static void my_error_exit(j_common_ptr cinfo)
 {
+    char buffer[JMSG_LENGTH_MAX];
     /* cinfo->err really points to a my_error_mgr struct, so coerce pointer. */
     struct my_error_mgr *myerr = (struct my_error_mgr *) cinfo->err;
 
@@ -272,7 +273,9 @@ static void my_error_exit(j_common_ptr cinfo)
      * Always display the message.
      * We could postpone this until after returning, if we chose.
      */
-    (*cinfo->err->output_message) (cinfo);
+    (*cinfo->err->format_message) (cinfo, buffer);
+
+    MOTION_LOG(ERR, TYPE_ALL, NO_ERRNO, "%s: %s", buffer);
 
     /* Return control to the setjmp point. */
     longjmp (myerr->setjmp_buffer, 1);
@@ -280,14 +283,18 @@ static void my_error_exit(j_common_ptr cinfo)
 
 static void my_emit_message(j_common_ptr cinfo, int msg_level)
 {
+    char buffer[JMSG_LENGTH_MAX];
     /* cinfo->err really points to a my_error_mgr struct, so coerce pointer. */
     struct my_error_mgr *myerr = (struct my_error_mgr *) cinfo->err;
 
     if (msg_level < 0)
-        myerr->warning_seen = 1;
+        myerr->warning_seen++ ;
 
-    /* Call original emit_message() */
-    (myerr->original_emit_message)(cinfo, msg_level);
+    //msg_level = 3 are the RST markers of the JPG which are not of much interest
+    if (msg_level < 3) {
+        (*cinfo->err->format_message) (cinfo, buffer);
+        MOTION_LOG(DBG, TYPE_VIDEO, NO_ERRNO, "%s: msg_level: %d, %s", msg_level, buffer);
+    }
 }
 
 #define MAX_LUMA_WIDTH   4096
@@ -478,7 +485,7 @@ int decode_jpeg_raw (unsigned char *jpeg_data, int len,
     if (setjmp (jerr.setjmp_buffer)) {
         /* If we get here, the JPEG code has signaled an error. */
         jpeg_destroy_decompress (&dinfo);
-        return -1;
+        return 1;
     }
 
     jpeg_create_decompress (&dinfo);
@@ -491,9 +498,9 @@ int decode_jpeg_raw (unsigned char *jpeg_data, int len,
      */
     jpeg_read_header (&dinfo, TRUE);
     dinfo.raw_data_out = TRUE;
-#if JPEG_LIB_VERSION >= 70    
+#if JPEG_LIB_VERSION >= 70
     dinfo.do_fancy_upsampling = FALSE;
-#endif    
+#endif
     dinfo.out_color_space = JCS_YCbCr;
     dinfo.dct_method = JDCT_IFAST;
     guarantee_huff_tables(&dinfo);
@@ -584,9 +591,9 @@ int decode_jpeg_raw (unsigned char *jpeg_data, int len,
         if (field > 0) {
             jpeg_read_header (&dinfo, TRUE);
             dinfo.raw_data_out = TRUE;
-#if JPEG_LIB_VERSION >= 70            
+#if JPEG_LIB_VERSION >= 70
             dinfo.do_fancy_upsampling = FALSE;
-#endif            
+#endif
             dinfo.out_color_space = JCS_YCbCr;
             dinfo.dct_method = JDCT_IFAST;
             jpeg_start_decompress (&dinfo);
@@ -746,10 +753,19 @@ int decode_jpeg_raw (unsigned char *jpeg_data, int len,
 
     jpeg_destroy_decompress (&dinfo);
 
-    if (jerr.warning_seen)
+    /**
+    * The 10% was determined by trial.  Perhaps a better
+    * threshold for discarding an image would be a function
+    * of the threshold for the trigger of motion.
+    */
+    if (dinfo.output_height == 0){ 
         return 1;
-    else
-        return 0;
+    } else {
+        if ( (jerr.warning_seen / dinfo.output_height)  > 0.10)
+            return 1;
+        else
+            return 0;
+    }
 
 ERR_EXIT:
     jpeg_destroy_decompress (&dinfo);
@@ -770,7 +786,7 @@ int decode_jpeg_gray_raw(unsigned char *jpeg_data, int len,
                          unsigned int height, unsigned char *raw0,
                          unsigned char *raw1, unsigned char *raw2)
 {
-    int numfields, hsf[3], field, yl, yc, xsl, xsc, xs, xd, hdown;
+    int numfields, field, yl, yc, xsl, xsc, xs, xd, hdown;
     unsigned int x, y, vsf[3];
 
     JSAMPROW row0[16] = { buf0[0], buf0[1], buf0[2], buf0[3],
@@ -805,7 +821,7 @@ int decode_jpeg_gray_raw(unsigned char *jpeg_data, int len,
     dinfo.raw_data_out = TRUE;
 #if JPEG_LIB_VERSION >= 70
     dinfo.do_fancy_upsampling = FALSE;
-#endif    
+#endif
     dinfo.out_color_space = JCS_GRAYSCALE;
     dinfo.dct_method = JDCT_IFAST;
 
@@ -818,8 +834,7 @@ int decode_jpeg_gray_raw(unsigned char *jpeg_data, int len,
     guarantee_huff_tables(&dinfo);
     jpeg_start_decompress (&dinfo);
 
-    hsf[0] = 1; hsf[1] = 1; hsf[2] = 1;
-    vsf[0]= 1; vsf[1] = 1; vsf[2] = 1;
+    vsf[0] = 1; vsf[1] = 1; vsf[2] = 1;
 
     /* Height match image height or be exact twice the image height. */
 
@@ -874,7 +889,7 @@ int decode_jpeg_gray_raw(unsigned char *jpeg_data, int len,
             dinfo.raw_data_out = TRUE;
 #if JPEG_LIB_VERSION >= 70
             dinfo.do_fancy_upsampling = FALSE;
-#endif            
+#endif
             dinfo.out_color_space = JCS_GRAYSCALE;
             dinfo.dct_method = JDCT_IFAST;
             jpeg_start_decompress (&dinfo);

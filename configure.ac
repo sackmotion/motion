@@ -1,6 +1,7 @@
 # Process this file with autoconf to produce a configure script
 
 AC_INIT(motion, esyscmd(['./version.sh']))
+AC_GNU_SOURCE
 AC_CONFIG_SRCDIR([motion.c])
 AC_CONFIG_HEADERS(config.h)
 AC_PROG_CC
@@ -36,7 +37,7 @@ if test "${Darwin}" = ""; then
 	AC_MSG_RESULT(no)
 	AC_MSG_CHECKING(for *BSD)
 
-	FreeBSD=`uname -a | grep "BSD"`
+	FreeBSD=`uname -a | grep "FreeBSD"`
 	if test "${FreeBSD}" = ""; then
 		AC_MSG_RESULT(no)
 		VIDEO="video.o video2.o video_common.o"
@@ -45,7 +46,7 @@ if test "${Darwin}" = ""; then
 		if test "${LINUXTHREADS}" = "no"; then
 			AC_MSG_CHECKING(Linuxthreads)
 			AC_MSG_RESULT(skipping)
-		else	
+		else
 			THREAD_CHECK="/usr/local/include/pthread/linuxthreads/pthread.h"
 			THREAD_LIB_CHECK="/usr/local/lib/liblthread.so"
 		fi
@@ -53,9 +54,9 @@ if test "${Darwin}" = ""; then
 		if test "${PWCBSD}" != "no"; then
 			VIDEO="video.o video2.o video_common.o"
 			TEMP_CFLAGS="${CFLAGS} -I/usr/local/include -DPWCBSD"
-		else 
+		else
 			VIDEO="video_freebsd.o"
-			TEMP_CFLAGS="${CFLAGS} -I/usr/local/include"	
+			TEMP_CFLAGS="${CFLAGS} -I/usr/local/include"
 		fi
 
 		TEMP_LDFLAGS="${LDFLAGS} -L/usr/local/lib"
@@ -95,7 +96,7 @@ if test "${FreeBSD}" != "" && test "${PWCBSD}" = "no"; then
 		TEMP_CFLAGS="${TEMP_CFLAGS} -DOLD_BKTR"
 	fi
 #
-# Check to Exclude BKTR 
+# Check to Exclude BKTR
 #
 BKTR="yes"
 AC_ARG_WITH(bktr,
@@ -107,7 +108,7 @@ BKTR="$withval"
 )
 
 	if test "${BKTR}" = "no"; then
-        	TEMP_CFLAGS="${TEMP_CFLAGS} -DWITHOUT_V4L"
+		TEMP_CFLAGS="${TEMP_CFLAGS} -DWITHOUT_V4L"
 	fi
 
 else
@@ -139,10 +140,10 @@ AC_MSG_CHECKING(for linuxthreads)
 # Check for thread header
 #
 	if test -f "${THREAD_CHECK}"; then
-       	HEADERS_THREAD_CFLAGS="-I/usr/local/include/pthread/linuxthreads"
-       	THREADS="yes"
+		HEADERS_THREAD_CFLAGS="-I/usr/local/include/pthread/linuxthreads"
+		THREADS="yes"
 	else
-       	THREADS="no"
+		THREADS="no"
 	fi
 
 #
@@ -152,7 +153,7 @@ AC_MSG_CHECKING(for linuxthreads)
 		THREADS="yes"
 		LIB_THREAD="-llthread -llgcc_r"
 	else
-       	THREADS="no"
+		THREADS="no"
 	fi
 
 # Checks for Library linuxthreads for FreeBSD
@@ -198,46 +199,50 @@ if test x$PTHREAD_LIB != xyes; then
 	fi
 	PTHREAD_SUPPORT="yes"
 fi
-	AC_MSG_RESULT($PTHREAD_SUPPORT)                        
+	AC_MSG_RESULT($PTHREAD_SUPPORT)
 
 else
-	echo 
+	echo
 	echo "You do not have threads support"
-	echo	
+	echo
 fi
 
+
+if test "x$PTHREAD_SUPPORT" = "xyes"; then
+    AC_MSG_CHECKING([[for pthread_setname_np]])
+    CFLAGS="$TEMP_CFLAGS"
+    LIBS="$TEMP_LIBS"
+    AC_LINK_IFELSE(
+    [AC_LANG_PROGRAM([[#include <pthread.h>]], [[  pthread_setname_np(pthread_self(), "name")]])],
+    [AC_DEFINE([[HAVE_PTHREAD_SETNAME_NP]], [[1]], [Define if you have pthread_setname_np function.])
+     AC_MSG_RESULT([[yes]])],
+    [AC_MSG_RESULT([[no]])] )
+fi
 
 #
 # Check for sdl library
 #
 SDL_SUPPORT="no"
 AC_ARG_WITH(sdl,
-[  --without-sdl           Compile without sdl support to get stream in SDL window.
+[  --with-sdl[=DIR]          Specify the prefix for the install path for
+                          sdl-config to get stream in SDL window (optional).
 ],
 [],
-[])
-AC_MSG_CHECKING(for sdl)
+[withval="no"])
 if test "x$withval" = "xno"; then
+	AC_MSG_CHECKING(for sdl)
 	AC_MSG_RESULT(skipped)
 else
-	if test "${FreeBSD}" != ""; then
-		CONFIG_SDL='sdl11-config'
-	else
-		CONFIG_SDL='sdl-config'
-	fi
+	AC_PATH_PROG([CONFIG_SDL], [sdl-config], [], [${PATH}:${withval}:${withval}/bin])
 	if test -z "`($CONFIG_SDL --version) 2>/dev/null`" ;then
-		AC_MSG_RESULT(no)
-		if test "$withval" = "yes"; then
-			echo ""
-			echo "****************************************************"
-			echo "* sdl-config could not be found. Please install it *"
-			echo "* and remove the --with-sdl configure argument.    *"
-			echo "* libSDL can be found at http://www.libsdl.org     *"
-			echo "****************************************************"
-			echo ""
-		fi
+		echo ""
+		echo "****************************************************"
+		echo "* sdl-config could not be found. Please install it *"
+		echo "* and remove the --with-sdl configure argument.    *"
+		echo "* libSDL can be found at http://www.libsdl.org     *"
+		echo "****************************************************"
+		echo ""
 	else
-		AC_MSG_RESULT(yes)
 		SDL_SUPPORT="yes"
 		TEMP_LIBS="$TEMP_LIBS `${CONFIG_SDL} --libs`"
 		TEMP_CFLAGS="${TEMP_CFLAGS} `${CONFIG_SDL} --cflags`"
@@ -265,7 +270,7 @@ if test "${JPEG_TURBO}" = "no"; then
     AC_MSG_RESULT(skipping)
 else
     AC_MSG_CHECKING(for libjpeg-turbo in -> [${JPEG_TURBO}] <-)
-    if test -f ${JPEG_TURBO}/lib/libjpeg.a ; then
+    if test -f ${JPEG_TURBO}/lib/libjpeg.a -o -f ${JPEG_TURBO}/lib/libjpeg.so; then
         AC_MSG_RESULT(found)
         JPEG_TURBO_OK="found"
     else
@@ -282,8 +287,8 @@ if test "${JPEG_TURBO_OK}" = "found"; then
     CFLAGS="$CFLAGS -I${JPEG_TURBO}/include"
     LIBS="$LIBS -L${JPEG_TURBO}/lib -ljpeg"
     AC_CHECK_LIB(jpeg, jpeg_start_compress,
-        [ TEMP_LIBS="$LIBS"
-          TEMP_CFLAGS="${CFLAGS}"
+        [ TEMP_LIBS="$TEMP_LIBS -L${JPEG_TURBO}/lib -ljpeg"
+          TEMP_CFLAGS="${TEMP_CFLAGS} -I${JPEG_TURBO}/include"
           TEMP_LDFLAGS="$TEMP_LDFLAGS $LDFLAGS"
           JPEG_SUPPORT="yes"],,)
     LIBS="$saved_LIBS"
@@ -317,7 +322,7 @@ if test "${JPEG_MMX}" = "no" || test x$JPEG_SUPPORT != xyes; then
 elif test "${JPEG_MMX}" = "yes"; then
 	# AUTODETECT STATIC LIB
 	AC_MSG_CHECKING(for libjpeg-mmx autodetecting)
-	
+
 	if test -f /usr/lib/libjpeg-mmx.a ; then
 		AC_MSG_RESULT(found)
 		JPEG_MMX_OK="found"
@@ -329,8 +334,8 @@ elif test "${JPEG_MMX}" = "yes"; then
 	else
 		AC_MSG_RESULT(not found)
 	fi
-else	
-	AC_MSG_CHECKING(for libjpeg-mmx in -> [${JPEG_MMX}] <-)	
+else
+	AC_MSG_CHECKING(for libjpeg-mmx in -> [${JPEG_MMX}] <-)
 	if test -f ${JPEG_MMX}/libjpeg-mmx.a ; then
 		AC_MSG_RESULT(found)
 		JPEG_MMX_OK="found"
@@ -371,196 +376,74 @@ if test x$JPEG_SUPPORT != xyes ; then
   )
 fi
 
+#
+# Check for the pkg-config.  
+#
+
+AC_CHECK_PROG([PKGCONFIG],[pkg-config],[yes],[no])
+AM_CONDITIONAL([FOUND_PKGCONFIG], [test "x$PKGCONFIG" = xyes])
+AM_COND_IF([FOUND_PKGCONFIG],,[AC_MSG_ERROR([Required package 'pkg-config' not found, please check motion_guide.html and install necessary dependencies.])])
+
+# Check for raspberry pi mmal interface
+#
+WITHOUT_MMAL="no"
+AC_ARG_WITH([mmal],
+AS_HELP_STRING([--without-mmal],
+               [Compile without RaspberyPi mmal camera support]),
+WITHOUT_MMAL="yes",
+WITHOUT_MMAL="no")
+
+if test "${WITHOUT_MMAL}" = "no"; then
+  HAVE_MMAL=""
+  LIBRASPBERRYPIDEVPATH="/opt/vc/include/interface/mmal"
+
+  if test -d ${LIBRASPBERRYPIDEVPATH}; then
+       HAVE_MMAL="yes"
+  fi
+
+  AS_IF([test "${HAVE_MMAL}" = "yes" ], [
+           AC_SUBST(MMAL_CFLAGS)
+           AC_SUBST(MMAL_OBJ)
+           AC_SUBST(MMAL_LIBS)
+           MMAL_OBJ="mmalcam.o raspicam/RaspiCamControl.o raspicam/RaspiCLI.o"
+           MMAL_CFLAGS="-std=gnu99 -DHAVE_MMAL -Irasppicam -I/opt/vc/include"
+           MMAL_LIBS="-L/opt/vc/lib  -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lvchostif -lvchiq_arm"
+           AC_DEFINE([HAVE_MMAL], 1, [Define to 1 if we want MMAL])
+  ])
+fi
 
 #
 # Check for libavcodec and libavformat from ffmpeg
 #
-FFMPEG_DIR="yes"
-FFMPEG_OK="no_found"
 FFMPEG_OBJ=""
-AC_ARG_WITH(ffmpeg,
-[  --with-ffmpeg[=DIR]       Specify the prefix for the install path for
-                          libavcodec/libavformat (part of ffmpeg) be able to 
-                          encode mpeg movies realtime.
-                          If this is not specified motion will try to find
-                          the libraries in /usr and /usr/local.
-                          ],
-FFMPEG_DIR="$withval"
-)
+AC_ARG_WITH([ffmpeg],
+	    AS_HELP_STRING([--with-ffmpeg[=DIR]], [Build with FFMPEG support]),
+	    [with_ffmpeg=$withval],
+	    [with_ffmpeg=yes])
 
-# 
-# ffmpeg headers custom location
-#
-FFMPEG_HEADERS_DIR="yes"
-AC_ARG_WITH(ffmpeg_headers,
-[  --with-ffmpeg-headers[=DIR] Specify the prefix for ffmpeg headers.
-                               ],
-FFMPEG_HEADERS_DIR="$withval"
-)
+AS_IF([test "x$with_ffmpeg" != "xno"], [
+       AS_IF([test "x$with_ffmpeg" != "xyes"], [
+	      PKG_CONFIG_PATH=${with_ffmpeg}/lib/pkgconfig:$PKG_CONFIG_PATH
+	      export PKG_CONFIG_PATH
+	])
 
-#
-# --without-ffmpeg or with-ffmpeg=no
-#
-if test "${FFMPEG_DIR}" = "no"; then
-	AC_MSG_CHECKING(for ffmpeg)
-	AC_MSG_RESULT(skipping)
-#
-# with-ffmpeg=<dir> or nothing
-#
-else if test "${FFMPEG_DIR}" = "yes"; then
-	# AUTODETECT STATIC/SHARED LIB 
-	AC_MSG_CHECKING(for ffmpeg autodetecting libraries)
+       AC_SUBST(FFMPEG_LIBS)
+       AC_SUBST(FFMPEG_CFLAGS)
+       FFMPEG_DEPS="libavutil libavformat libavcodec libswscale"
+       if pkg-config $FFMPEG_DEPS; then
+               FFMPEG_CFLAGS=`pkg-config --cflags $FFMPEG_DEPS`
+               FFMPEG_LIBS=`pkg-config --libs $FFMPEG_DEPS`
+               HAVE_FFMPEG="yes"
+       else
+              AC_MSG_ERROR([Required ffmpeg packages 'libavutil-dev libavformat-dev libavcodec-dev libswscale-dev' were not found.  Please check motion_guide.html and install necessary dependencies or use the '--without-ffmpeg' configuration option.])
+       fi
+])
 
-	if test -f /usr/lib64/libavcodec.a -o -f /usr/lib64/libavcodec.so && test -f /usr/lib64/libavformat.a -o -f /usr/lib64/libavformat.so ; then
-		AC_MSG_RESULT(found in /usr/lib64)
-		FFMPEG_OK="found"
-		FFMPEG_LIB="/usr/lib64"
-		FFMPEG_DIR="/usr"
-	elif test -f /usr/lib/libavcodec.a -o -f /usr/lib/libavcodec.so && test -f /usr/lib/libavformat.a -o -f /usr/lib/libavformat.so ; then
-		AC_MSG_RESULT(found in /usr/lib)
-		FFMPEG_OK="found"
-		FFMPEG_LIB="/usr/lib"
-		FFMPEG_DIR="/usr"
-	elif test -f /usr/local/lib/libavcodec.a -o -f /usr/local/lib/libavcodec.so && test -f /usr/local/lib/libavformat.a -o -f /usr/local/lib/libavformat.so ; then
-		AC_MSG_RESULT(found in /usr/local/lib)
-		FFMPEG_OK="found"
-		FFMPEG_LIB="/usr/local/lib"
-		FFMPEG_DIR="/usr/local"
-    elif test -f /usr/lib/x86_64-linux-gnu/libavcodec.a -o -f /usr/lib/x86_64-linux-gnu/libavcodec.so && test /usr/lib/x86_64-linux-gnu/libavformat.a -o -f /usr/lib/x86_64-linux-gnu/libavformat.so ; then
-        AC_MSG_RESULT(found in /usr/lib/x86_64-linux-gnu)
-        FFMPEG_OK="found"
-        FFMPEG_LIB="/usr/lib/x86_64-linux-gnu"
-        FFMPEG_DIR="/usr"
-	else
-		AC_MSG_RESULT(not found)
-		echo ""
-		echo "**********************************************"
-		echo "* libavcodec.a or libavcodec.so or           *"
-		echo "* libavformat.a or libavformat.so not found: *"
-		echo "*    ALL FFMPEG FEATURES DISABLED            *"
-		echo "*                                            *"
-		echo "* Please read the Motion Guide for help:     *"
-		echo "* http://motion.sourceforge.net              *"
-		echo "**********************************************"
-		echo ""		
-	fi 
-else
-	AC_MSG_CHECKING(for ffmpeg libraries in -> [${FFMPEG_DIR}] <-)
-	if test -f ${FFMPEG_DIR}/lib/libavcodec.a -o -f ${FFMPEG_DIR}/lib/libavcodec.so && test -f ${FFMPEG_DIR}/lib/libavformat.a -o -f ${FFMPEG_DIR}/lib/libavformat.so ; then
-		AC_MSG_RESULT(found)
-		FFMPEG_OK="found"
-		FFMPEG_LIB="${FFMPEG_DIR}/lib"
-	elif test -f ${FFMPEG_DIR}/libavcodec.a -o -f ${FFMPEG_DIR}/libavcodec.so && test -f ${FFMPEG_DIR}/libavformat.a -o -f ${FFMPEG_DIR}/libavformat.so ; then
-		AC_MSG_RESULT(found)
-		FFMPEG_LIB="${FFMPEG_DIR}"
-		FFMPEG_OK="found"
-	else
-		AC_MSG_RESULT(not found)
-		if test "${FFMPEG_OK}" != "found"; then
-			echo ""
-			echo "**********************************************"
-			echo "* libavcodec.a or libavcodec.so or           *"
-			echo "* libavformat.a or libavformat.so not found: *"
-			echo "*    ALL FFMPEG FEATURES DISABLED            *"
-			echo "*                                            *"
-			echo "* Please read the Motion Guide for help:     *"
-			echo "* http://motion.sourceforge.net              *"
-			echo "**********************************************"
-			echo ""
-		fi
-	fi
-fi
-
-#
-# Now check for ffmpeg headers ( avformat.h ) if ffmpeg libs were found
-#
-
-if test "${FFMPEG_OK}" = "found"; then
-    if test "${FFMPEG_HEADERS_DIR}" = "yes"; then
-        AC_MSG_CHECKING(for ffmpeg headers in ${FFMPEG_DIR})
-	else
-        AC_MSG_CHECKING(for ffmpeg headers in ${FFMPEG_HEADERS_DIR})
-        FFMPEG_DIR="${FFMPEG_HEADERS_DIR}"
-    fi
-
-    if test -f ${FFMPEG_DIR}/include/avformat.h; then
-        AC_MSG_RESULT(found ${FFMPEG_DIR}/include/avformat.h)
-        FFMPEG_CFLAGS="-I${FFMPEG_DIR}/include"
-    elif test -f ${FFMPEG_DIR}/avformat.h; then
-        AC_MSG_RESULT(found ${FFMPEG_DIR}/avformat.h)
-        FFMPEG_CFLAGS="-I${FFMPEG_DIR}"
-    elif test -f ${FFMPEG_DIR}/include/ffmpeg/avformat.h; then
-        AC_MSG_RESULT(found ${FFMPEG_DIR}/include/ffmpeg/avformat.h)
-        FFMPEG_CFLAGS="-I${FFMPEG_DIR}/include/ffmpeg"
-    elif test -f ${FFMPEG_DIR}/include/libavformat/avformat.h; then
-        AC_MSG_RESULT(found ${FFMPEG_DIR}/include/libavformat/avformat.h)
-        FFMPEG_CFLAGS="-I${FFMPEG_DIR}/include -DFFMPEG_NEW_INCLUDES"
-        AVFORMAT="-I${FFMPEG_DIR}/include/libavformat" 
-    elif test -f ${FFMPEG_DIR}/include/ffmpeg/libavformat/avformat.h; then
-        AC_MSG_RESULT(found ${FFMPEG_DIR}/include/ffmpeg/libavformat/avformat.h)
-        FFMPEG_CFLAGS="-I${FFMPEG_DIR}/include/ffmpeg -DFFMPEG_NEW_INCLUDES"
-        AVFORMAT="-I${FFMPEG_DIR}/include/ffmpeg/libavformat" 
-    elif test -f ${FFMPEG_DIR}/libavformat/avformat.h; then
-        AC_MSG_RESULT(found ${FFMPEG_DIR}/libavformat/avformat.h)
-        FFMPEG_CFLAGS="-I${FFMPEG_DIR} -DFFMPEG_NEW_INCLUDES"
-        AVFORMAT="-I{FFMPEG_DIR}/libavformat"
-    else
-        AC_MSG_RESULT(not found)
-        FFMPEG_OK="no_found"
-        echo "**********************************************"
-        echo "*       avformat.h not found:                *"
-        echo "*    ALL FFMPEG FEATURES DISABLED            *"
-        echo "*                                            *"
-        echo "* Please read the Motion Guide for help:     *"
-        echo "* http://motion.sourceforge.net              *"
-        echo "**********************************************"
-        echo ""
-    fi
-
-#
-# If ffmpeg libs and headers have been found 
-#
-
-	if  test "${FFMPEG_OK}" = "found"; then	
-        TEMP_LIBS="$TEMP_LIBS -L${FFMPEG_LIB} -lavformat -lavcodec -lavutil -lm -lz"
-        TEMP_LDFLAGS="${TEMP_LDFLAGS} -L${FFMPEG_LIB}"
-        TEMP_CFLAGS="${TEMP_CFLAGS} -DHAVE_FFMPEG ${FFMPEG_CFLAGS}"
-
-        FFMPEG_OBJ="ffmpeg.o"
-        AC_SUBST(FFMPEG_OBJ)
-
-        RTPS_OBJ="netcam_rtsp.o"
-        AC_SUBST(RTPS_OBJ)
-
-        AC_MSG_CHECKING([file_protocol is defined in ffmpeg ?])
-        saved_CFLAGS=$CFLAGS
-        saved_LIBS=$LIBS
-
-
-		CFLAGS="${FFMPEG_CFLAGS} ${AVFORMAT}"
-		LIBS="$TEMP_LIBS"
-    	
-	    AC_COMPILE_IFELSE([AC_LANG_SOURCE([
-		    [
-		     #include <avformat.h>
-		     URLProtocol test_file_protocol;
-		     int main(void){
-		         test_file_protocol.url_read  = file_protocol.url_read;
-		         return 0;
-		     }
-		     ]])],
-		     [AC_MSG_RESULT(yes)],
-		     [
-			     AC_MSG_RESULT(no)
-			     TEMP_CFLAGS="${TEMP_CFLAGS} -DHAVE_FFMPEG_NEW"
-		     ]
-	    )
-		CFLAGS=$saved_CFLAGS
-		LIBS=$saved_LIBS
-	fi
-fi	
-fi
-
+AS_IF([test "${HAVE_FFMPEG}" = "yes" ], [
+       FFMPEG_OBJ="ffmpeg.o"
+       AC_DEFINE([HAVE_FFMPEG], 1, [Define to 1 if FFMPEG is around])
+])
+AC_SUBST(FFMPEG_OBJ)
 
 #
 # Check SQLITE3
@@ -581,17 +464,28 @@ else
     saved_CFLAGS=$CFLAGS
     saved_LIBS=$LIBS
 
-    AC_CHECK_LIB(sqlite3, sqlite3_open,
-    [
-    TEMP_LIBS="$TEMP_LIBS -lsqlite3"
-    SQLITE3_SUPPORT="yes"
-    AC_DEFINE([HAVE_SQLITE3],1,[Define to 1 if you have SQLITE3 support])
-    ]
-    )
+    # first we check to see if the sqlite3 amalgamation (sqlite3.c), is in with our source
+    # this is the preferred way to use sqlite
+    if test -f sqlite3.c; then
+        SQLITE3_SUPPORT="yes"
+        VIDEO="$VIDEO sqlite3.o"
+        TEMP_LIBS="$TEMP_LIBS -ldl"
+        AC_DEFINE([HAVE_SQLITE3],1,[Define to 1 if you have SQLITE3])
+        AC_DEFINE([HAVE_SQLITE3_EMBEDDED],1,[Define to 1 if you have SQLITE3 embedded support])
+    else
+        # if sqlite3.c is not found then we look for the shared library
+        AC_CHECK_LIB(sqlite3, sqlite3_open,
+            [
+            TEMP_LIBS="$TEMP_LIBS -lsqlite3"
+            SQLITE3_SUPPORT="yes"
+            AC_DEFINE([HAVE_SQLITE3],1,[Define to 1 if you have SQLITE3 shared library support])
+            ]
+        )
+    fi
 
     CFLAGS=$saved_CFLAGS
     LIBS=$saved_LIBS
-fi    
+fi
 
 
 #
@@ -661,13 +555,13 @@ else
 			fi
 		done
 	elif test "${MYSQL_HEADERS}" = "no"; then
-		AC_MSG_CHECKING(for mysql headers)	
+		AC_MSG_CHECKING(for mysql headers)
 		AC_MSG_RESULT(skipped)
 	else
 		AC_MSG_CHECKING(for mysql headers in $MYSQL_HEADERS)
 		# Manual detection for <withval>
-        	if test -f $MYSQL_HEADERS/mysql.h; then
-                	MYSQL_INCDIR=$MYSQL_HEADERS
+		if test -f $MYSQL_HEADERS/mysql.h; then
+			MYSQL_INCDIR=$MYSQL_HEADERS
 	        fi
 	fi
 
@@ -686,7 +580,7 @@ else
 	# ******* Search mysql libs *********
 	if test "${MYSQL_LIBS}" = "yes"; then
 		AC_MSG_CHECKING(autodect mysql libs)
-        	# Autodetect
+		# Autodetect
 		for w in /usr/lib64 /usr/lib /usr/local/lib /usr/mysql /usr/local/mysql /usr/local/mysql/lib /opt /opt/mysql /usr/lib/x86_64-linux-gnu; do
 			# check for plain setups
 			if test -f $w/libmysqlclient.a -o -f $w/libmysqlclient.so; then
@@ -705,7 +599,7 @@ else
 			fi
 		done
 	elif test "${MYSQL_LIBS}" = "no"; then
-        	AC_MSG_CHECKING(for mysql libs)
+		AC_MSG_CHECKING(for mysql libs)
 	        AC_MSG_RESULT(skipped)
 	else
 		AC_MSG_CHECKING(for mysql libs in $MYSQL_LIBS)
@@ -726,13 +620,13 @@ else
 		saved_LIBS=$LIBS
 		CFLAGS="-I$MYSQL_INCDIR"
 		LIBS="-L$MYSQL_LIBDIR"
-		AC_CHECK_LIB(mysqlclient,mysql_init,[	
+		AC_CHECK_LIB(mysqlclient,mysql_init,[
 					TEMP_LIBS="$TEMP_LIBS -L$MYSQL_LIBDIR -lmysqlclient -lz"
 					TEMP_CFLAGS="$TEMP_CFLAGS -I$MYSQL_INCDIR"
 					MYSQL_SUPPORT="yes"
 					AC_DEFINE([HAVE_MYSQL],1,[Define to 1 if you have MySQL support])
 					],
-					AC_MSG_ERROR(MySQL support can't build without MySQL libraries))	
+					AC_MSG_ERROR(MySQL support can't build without MySQL libraries))
 		CFLAGS=$saved_CFLAGS
 		LIBS=$saved_LIBS
 	fi
@@ -752,7 +646,7 @@ PGSQL_SUPPORT="no"
 PGSQL_HEADERS="yes"
 PGSQL_LIBS="yes"
 
-AC_DEFUN(PGSQL_INC_CHK,[if test -r $i$1/libpq-fe.h; then PGSQL_DIR=$i; PGSQL_INCDIR=$i$1])
+AC_DEFUN([PGSQL_INC_CHK],[if test -r $i$1/libpq-fe.h; then PGSQL_DIR=$i; PGSQL_INCDIR=$i$1])
 
 AC_ARG_WITH(pgsql,
 [  --without-pgsql         Disable PostgreSQL support in motion.
@@ -799,15 +693,15 @@ else
 			el[]PGSQL_INC_CHK(/include/postgresql)
 			fi
 		done
-		
+
 	elif test "${PGSQL_HEADERS}" = "no"; then
-		AC_MSG_CHECKING(for pgsql headers)	
+		AC_MSG_CHECKING(for pgsql headers)
 		AC_MSG_RESULT(skipped)
 	else
 		AC_MSG_CHECKING(for pgsql headers in $PGSQL_HEADERS)
 		# Manual detection for <withval>
-        	if test -f $PGSQL_HEADERS/libpq-fe.h; then
-                	PGSQL_INCDIR=$PGSQL_HEADERS
+		if test -f $PGSQL_HEADERS/libpq-fe.h; then
+			PGSQL_INCDIR=$PGSQL_HEADERS
 	        fi
 	fi
 
@@ -833,10 +727,10 @@ else
 			if test -f /usr/lib64/libpq.so ; then
 				PGSQL_LIBDIR=/usr/lib64
 			elif test -f $PGSQL_DIR/lib/pgsql/libpq.so ; then
-				PGSQL_LIBDIR=$PGSQL_DIR/lib/pgsql 
+				PGSQL_LIBDIR=$PGSQL_DIR/lib/pgsql
 			elif test -f $PGSQL_DIR/lib/postgresql/libpq.so ; then
 				PGSQL_LIBDIR=$PGSQL_DIR/lib/postgresql
-			elif test -f $PGSQL_DIR/lib/libpq.so ; then	
+			elif test -f $PGSQL_DIR/lib/libpq.so ; then
 				PGSQL_LIBDIR=$PGSQL_DIR/lib
 			else
 				PGSQL_LIBDIR=""
@@ -845,7 +739,7 @@ else
 			AC_MSG_RESULT($PGSQL_LIBDIR)
 
 		elif test "${PGSQL_LIBS}" = "no"; then
-	        	AC_MSG_CHECKING(for pgsql libs)
+			AC_MSG_CHECKING(for pgsql libs)
 		        AC_MSG_RESULT(skipped)
 		else
 			AC_MSG_CHECKING(for pgsql libs in $PGSQL_LIBS)
@@ -870,13 +764,13 @@ else
 						TEMP_LIBS="$TEMP_LIBS -L$PGSQL_LIBDIR -lpq"
 						TEMP_CFLAGS="$TEMP_CFLAGS -I$PGSQL_INCDIR"
 						AC_DEFINE([HAVE_PGSQL],1,[Define to 1 if you have PostgreSQL support])
-					], 
+					],
 			AC_MSG_ERROR(PostgreSQL support can't build without PostgreSQL libraries))
-			LDFLAGS=""	
+			LDFLAGS=""
 			CFLAGS=$saved_CFLAGS
 			LIBS=$saved_LIBS
 		fi
-		
+
 	fi # end pgsql-include , pgsql-libs
 
 # end PostgreSQL detection
@@ -885,7 +779,7 @@ fi
 
 #Checks for header files.
 AC_HEADER_STDC
-AC_CHECK_HEADERS(stdio.h unistd.h stdint.h fcntl.h time.h signal.h sys/ioctl.h sys/mman.h linux/videodev.h linux/videodev2.h sys/param.h sys/types.h)
+AC_CHECK_HEADERS(stdio.h unistd.h stdint.h fcntl.h time.h signal.h sys/ioctl.h sys/mman.h linux/videodev.h linux/videodev2.h sys/param.h sys/types.h sys/videoio.h)
 
 AC_CHECK_FUNCS(get_current_dir_name)
 
@@ -897,17 +791,20 @@ if test "${V4L}" = "no"; then
 	AC_MSG_CHECKING(for V42L support)
 	AC_MSG_RESULT(skipping)
 else
-	AC_CHECK_TYPE([struct v4l2_buffer], 
-        	      [SUPPORTED_V4L2=true],
-             	 [SUPPORTED_V4L2=false],
-	       	 [#include <sys/time.h>
-			#include <linux/videodev.h>])
-
+	AC_CHECK_TYPE([struct v4l2_buffer],
+		[SUPPORTED_V4L2=true],
+		[SUPPORTED_V4L2=false],
+		[#include <sys/time.h>
+			#ifdef HAVE_LINUX_VIDEODEV_H
+			#include <linux/videodev.h>
+			#elif HAVE_SYS_VIDEOIO_H
+			#include <sys/videoio.h>
+			#endif])
 	AC_MSG_CHECKING(for V42L support)
 	if test x$SUPPORTED_V4L2 = xtrue; then
 		AC_MSG_RESULT(yes)
 		TEMP_CFLAGS="${TEMP_CFLAGS} -DMOTION_V4L2"
-	else	
+	else
 		AC_MSG_RESULT(no)
 	fi
 
@@ -979,7 +876,18 @@ if test "${OPTIMIZECPU}" = "yes"; then
 # Try to autodetect cpu type
 CPU_NAME="unknown"
 CPU_TYPE="unknown"
-if test -e "/proc/cpuinfo" ; then
+if test -e "/proc/device-tree/model"; then
+    # explicit test for RPI3 as /proc/cpuinfo reports armv7 even though
+    # it is armv8
+    RPI3=`grep "Raspberry Pi 3 Model" /proc/device-tree/model`
+    if test "x${RPI3}" != "x"; then
+        CPU_NAME="Raspberry Pi 3"
+        CPU_TYPE="Raspberry Pi 3"
+	CPU_OPTIONS="-mcpu=cortex-a53 -mfpu=neon-fp-armv8"
+    fi
+fi
+
+if test "x${CPU_TYPE}" = "xunknown" && test -e "/proc/cpuinfo" ; then
 	intel[[30]]="-march=i386"
 	intel[[32]]="-march=i386"
 	intel[[34]]="-march=i386"
@@ -1033,12 +941,12 @@ if test -e "/proc/cpuinfo" ; then
 	amd[[1543]]="-march=athlon64"
 	amd[[1544]]="-march=athlon64"
 	amd[[1565]]="-march=opteron"
-	amd[[1572]]="-march=k8" 
+	amd[[1572]]="-march=k8"
 	via[[67]]="-march=c3"
 	via[[68]]="-march=c3"
-	via[[69]]="-march=i686" 
+	via[[69]]="-march=i686"
 	via[[610]]="-march=i686"
-	
+
 	CPU_TYPE="known"
 	CPU_FAMILY=`cat /proc/cpuinfo | grep "cpu family" | head -n1`
 	CPU_MODEL=`cat /proc/cpuinfo | grep model[[^\ ]] | head -n1`
@@ -1179,11 +1087,11 @@ rm -f $TMPO
 rm -f $TMPC
 
 
-if test "x${TMP}" = "x1" ; then
+if test "x${TMP}" = "x0" ; then
+	echo "CPU optimization: $CPU_OPTIONS"
+else
 	CPU_OPTIONS=""
 	echo "No CPU optimizations will be added"
-else
-	echo "CPU optimization: $CPU_OPTIONS"
 fi
 
 else
@@ -1202,7 +1110,7 @@ AC_LINK_IFELSE([
 		TEMP_CFLAGS="${TEMP_CFLAGS} -DHAVE_BSWAP"
 		AC_MSG_RESULT(yes)
 	],
-	[ 
+	[
 		AC_MSG_RESULT(no)
 	])
 
@@ -1215,13 +1123,6 @@ CFLAGS="${TEMP_CFLAGS} $UNAME_DEFS  $CPU_OPTIONS"
 
 LIBS="${TEMP_LIBS}"
 LDFLAGS="${TEMP_LDFLAGS}"
-
-
-AC_CHECK_FUNC(avformat_alloc_context, AC_DEFINE([have_avformat_alloc_context],1,[Define to 1 if you have avformat_alloc_context support]))
-AC_CHECK_FUNC(av_avformat_alloc_context, AC_DEFINE([have_av_avformat_alloc_context],1,[Define to 1 if you have av_avformat_alloc_context support]))
-AC_CHECK_FUNC(av_register_protocol2, AC_DEFINE([have_av_register_protocol2],1,[Define to 1 if you have av_register_protocol2 support]))
-AC_CHECK_FUNC(av_register_protocol, AC_DEFINE([have_av_register_protocol],1,[Define to 1 if you have av_register_protocol support]))
-AC_CHECK_FUNC(av_get_media_type_string, AC_DEFINE([have_av_get_media_type_string],1,[Define to 1 if you have av_get_media_type_string support]))
 
 
 #
@@ -1242,18 +1143,17 @@ else
 	fi
 fi
 
-
 AC_SUBST(BIN_PATH)
 
 AC_CONFIG_FILES([
-thread1.conf
-thread2.conf
-thread3.conf
-thread4.conf
+camera1-dist.conf
+camera2-dist.conf
+camera3-dist.conf
+camera4-dist.conf
 motion-dist.conf
 motion.init-FreeBSD.sh
 motion.init-Debian
-motion.init-Fedora
+motion.service
 motion.spec
 Makefile
 ])
@@ -1264,14 +1164,14 @@ echo "   **************************"
 echo "      Configure status       "
 echo "      ${PACKAGE_NAME} ${PACKAGE_VERSION}"
 echo "   **************************"
-echo 
+echo
 
 
 if test "${Darwin}" != ""; then
     echo "OS             :     Darwin"
 elif test "${FreeBSD}" != ""; then
-    echo "OS             :     *BSD"		
-else 
+    echo "OS             :     *BSD"
+else
     echo "OS             :     Linux"
 fi
 
@@ -1281,7 +1181,7 @@ else
     echo "pthread support:     No"
     echo "**********************************************"
     echo "** Fatal Error YOU MUST HAVE pthread Support *"
-    echo "**********************************************" 
+    echo "**********************************************"
 fi
 
 
@@ -1319,7 +1219,7 @@ else
 	fi
 
 	if test x$SUPPORTED_V4L2 = xtrue; then
-        echo "V4L2 support:        Yes"	
+        echo "V4L2 support:        Yes"
 	else
         echo "V4L2 support:        No"
 	fi
@@ -1331,8 +1231,22 @@ else
 	echo "SDL support:         No"
 fi
 
-if test "${FFMPEG_OK}" = "found"; then
+if test "${HAVE_MMAL}" = "yes"; then
+    echo "MMAL support:        Yes"
+    echo " ... MMAL_CFLAGS: $MMAL_CFLAGS"
+    echo " ... MMAL_OBJ: $MMAL_OBJ"
+    echo " ... MMAL_LIBS: $MMAL_LIBS"
+elif test "${WITHOUT_MMAL}" = "yes"; then
+    echo "MMAL support:        disabled"
+else
+    echo "MMAL support:        No"
+    echo " ... libraspberrypi-dev package not installed"
+fi
+
+if test "${HAVE_FFMPEG}" = "yes"; then
     echo "FFmpeg support:      Yes"
+    echo " ... FFMPEG_CFLAGS: $FFMPEG_CFLAGS"
+    echo " ... FFMPEG_LIBS: $FFMPEG_LIBS"
 else
     echo "FFmpeg support:      No"
 fi
@@ -1354,11 +1268,10 @@ if test "${PGSQL_SUPPORT}" = "yes"; then
 else
     echo "PostgreSQL support:  No"
 fi
-echo 
+echo
 echo "CFLAGS: $CFLAGS"
 echo "LIBS: $LIBS"
 echo "LDFLAGS: $LDFLAGS"
 echo
 echo  "Install prefix:       $prefix"
 echo
-

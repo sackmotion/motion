@@ -57,15 +57,9 @@ void ftp_free_context(ftp_context_pointer ctxt)
     if (ctxt == NULL)
         return;
 
-    if (ctxt->path != NULL)
-        free(ctxt->path);
-
-    if (ctxt->user)
-        free(ctxt->user);
-
-    if (ctxt->passwd)
-        free(ctxt->passwd);
-
+    free(ctxt->path);
+    free(ctxt->user);
+    free(ctxt->passwd);
     if (ctxt->control_file_desc >= 0)
         close(ctxt->control_file_desc);
 
@@ -256,6 +250,8 @@ static int ftp_get_response(ftp_context_pointer ctxt)
         goto get_more;
 
     ctxt->control_buffer_index = ptr - ctxt->control_buffer;
+
+    MOTION_LOG(DBG, TYPE_NETCAM, NO_ERRNO, "%s: Server Response: %s",ctxt->control_buffer);    
 
     return (res / 100);
 }
@@ -794,8 +790,7 @@ int ftp_send_type(ftp_context_pointer ctxt, char type)
     int len, res;
 
     utype = toupper(type);
-    /* Assure transfer will be in "image" mode. */
-    snprintf(buf, sizeof(buf), "TYPE I\r\n");
+    snprintf(buf, sizeof(buf), "TYPE %c\r\n", utype);
     len = strlen(buf);
     res = send(ctxt->control_file_desc, buf, len, 0);
 

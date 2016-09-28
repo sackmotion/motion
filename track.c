@@ -5,11 +5,13 @@
  *    Copyright 2000, Jeroen Vreeken
  *    This program is published under the GNU Public license
  */
-
+#ifdef MOTION_V4L2
+#include <linux/videodev2.h>
+#endif /* MOTION_V4L2 */
 #include <math.h>
 #include "motion.h"
 
-#if defined(HAVE_LINUX_VIDEODEV_H) && (!defined(WITHOUT_V4L))
+#if (defined(HAVE_LINUX_VIDEODEV_H) || defined(HAVE_SYS_VIDEOIO_H)) && (!defined(WITHOUT_V4L))
 #include "pwc-ioctl.h"
 #endif
 
@@ -563,7 +565,6 @@ static unsigned int servo_status(struct context *cnt, unsigned int motor)
 
 static unsigned int servo_center(struct context *cnt, int x_offset, int y_offset)
 {
-    unsigned int ret = 0;
     int x_offset_abs;
     int y_offset_abs;
 
@@ -591,7 +592,7 @@ static unsigned int servo_center(struct context *cnt, int x_offset, int y_offset
     if (x_offset_abs <= cnt->track.maxx  && x_offset_abs >= cnt->track.minx) {
         /* Set Speed , TODO : it should be done only when speed changes */
         servo_command(cnt, cnt->track.motorx, SERVO_COMMAND_SPEED, cnt->track.speed);
-        ret = servo_command(cnt, cnt->track.motorx, SERVO_COMMAND_ABSOLUTE, x_offset_abs);
+        servo_command(cnt, cnt->track.motorx, SERVO_COMMAND_ABSOLUTE, x_offset_abs);
     }
 
     /* y-axis */
@@ -603,7 +604,7 @@ static unsigned int servo_center(struct context *cnt, int x_offset, int y_offset
     if (y_offset_abs <= cnt->track.maxy && y_offset_abs >= cnt->track.minx) {
         /* Set Speed , TODO : it should be done only when speed changes */
         servo_command(cnt, cnt->track.motory, SERVO_COMMAND_SPEED, cnt->track.speed);
-        ret = servo_command(cnt, cnt->track.motory, SERVO_COMMAND_ABSOLUTE, y_offset_abs);
+        servo_command(cnt, cnt->track.motory, SERVO_COMMAND_ABSOLUTE, y_offset_abs);
     }
 
     return cnt->track.move_wait;

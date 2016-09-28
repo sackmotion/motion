@@ -23,6 +23,10 @@
  *   4. add a entry to the config_params array below, if your
  *      option should be configurable by the config file.
  */
+
+#include <dirent.h>
+#include <string.h>
+
 #include "motion.h"
 
 #if (defined(BSD) && !defined(PWCBSD))
@@ -30,6 +34,8 @@
 #else
 #include "video.h"
 #endif /* BSD */
+
+#define EXTENSION ".conf"
 
 #ifndef HAVE_GET_CURRENT_DIR_NAME
 char *get_current_dir_name(void)
@@ -43,9 +49,11 @@ char *get_current_dir_name(void)
 #define stripnewline(x) {if ((x)[strlen(x)-1]=='\n') (x)[strlen(x) - 1] = 0; }
 
 struct config conf_template = {
+    camera_name:                    NULL,
     width:                          DEF_WIDTH,
     height:                         DEF_HEIGHT,
     quality:                        DEF_QUALITY,
+    camera_id:                      0,
     rotate_deg:                     0,
     max_changes:                    DEF_CHANGES,
     threshold_tune:                 0,
@@ -71,6 +79,7 @@ struct config conf_template = {
     contrast:                       0,
     saturation:                     0,
     hue:                            0,
+    power_line_frequency:           -1,
     roundrobin_frames:              1,
     roundrobin_skip:                1,
     pre_capture:                    0,
@@ -95,6 +104,8 @@ struct config conf_template = {
     stream_limit:                   0,
     stream_auth_method:             0,
     stream_authentication:          NULL,
+    stream_preview_scale:           25,
+    stream_preview_newline:         0,
     webcontrol_port:                0,
     webcontrol_localhost:           1,
     webcontrol_html_output:         1,
@@ -130,9 +141,7 @@ struct config conf_template = {
     database_user:                  NULL,
     database_password:              NULL,
     database_port:                  0,
-#ifdef HAVE_SQLITE3
-    sqlite3_db:                     NULL,
-#endif
+    database_busy_timeout:           0,
 #endif /* defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || define(HAVE_SQLITE3) */
     on_picture_save:                NULL,
     on_motion_detected:             NULL,
@@ -146,6 +155,11 @@ struct config conf_template = {
     netcam_keepalive:               "off",
     netcam_proxy:                   NULL,
     netcam_tolerant_check:          0,
+    rtsp_uses_tcp:                  1,
+#ifdef HAVE_MMAL
+    mmalcam_name:                   NULL,
+    mmalcam_control_params:         NULL,
+#endif
     text_changes:                   0,
     text_left:                      NULL,
     text_right:                     DEF_TIMESTAMP,
@@ -159,16 +173,23 @@ struct config conf_template = {
     log_file:                       NULL,
     log_level:                      LEVEL_DEFAULT+10,
     log_type_str:                   NULL,
+    camera_dir:                     sysconfdir"/conf.d"
 };
 
 
 static struct context **copy_bool(struct context **, const char *, int);
 static struct context **copy_int(struct context **, const char *, int);
-static struct context **config_thread(struct context **cnt, const char *str, int val);
+static struct context **config_camera(struct context **cnt, const char *str, int val);
+static struct context **read_camera_dir(struct context **cnt, const char *str,
+                                            int val);
 
 static const char *print_bool(struct context **, char **, int, unsigned int);
 static const char *print_int(struct context **, char **, int, unsigned int);
 static const char *print_string(struct context **, char **, int, unsigned int);
+static const char *print_camera(struct context **, char **, int, unsigned int);
+
+/* Deprcated thread config functions */
+static struct context **config_thread(struct context **cnt, const char *str, int val);
 static const char *print_thread(struct context **, char **, int, unsigned int);
 
 static void usage(void);
@@ -211,6 +232,15 @@ config_param config_params[] = {
     print_bool
     },
     {
+    "camera_name",
+    "# Name given to a camera. Shown in web interface and may be used with the specifier %$ for filenames and such.\n"
+    "# Default: not defined",
+    0,
+    CONF_OFFSET(camera_name),
+    copy_string,
+    print_string
+    },
+    {
     "logfile",
     "# Use a file to save logs messages, if not defined stderr and syslog is used. (default: not defined)",
     1,
@@ -220,7 +250,7 @@ config_param config_params[] = {
     },
     {
     "log_level",
-    "# Level of log messages [1..9] (EMR, ALR, CRT, ERR, WRN, NTC, ERR, DBG, ALL). (default: 6 / NTC)",
+    "# Level of log messages [1..9] (EMG, ALR, CRT, ERR, WRN, NTC, INF, DBG, ALL). (default: 6 / NTC)",
     1,
     CONF_OFFSET(log_level),
     copy_int,
@@ -248,7 +278,7 @@ config_param config_params[] = {
     },
     {
     "v4l2_palette",
-    "# v4l2_palette allows to choose preferable palette to be use by motion\n"
+    "# v4l2_palette allows one to choose preferable palette to be use by motion\n"
     "# to capture from those supported by your videodevice. (default: 17)\n"
     "# E.g. if your videodevice supports both V4L2_PIX_FMT_SBGGR8 and\n"
     "# V4L2_PIX_FMT_MJPEG then motion will by default use V4L2_PIX_FMT_MJPEG.\n"
@@ -411,6 +441,36 @@ config_param config_params[] = {
     print_bool
     },
     {
+    "rtsp_uses_tcp",
+    "# RTSP connection uses TCP to communicate to the camera. Can prevent image corruption.\n"
+    "# Default: on",
+    1,
+    CONF_OFFSET(rtsp_uses_tcp),
+    copy_bool,
+    print_bool
+    },
+#ifdef HAVE_MMAL
+    {
+    "mmalcam_name",
+    "# Name of camera to use if you are using a camera accessed through OpenMax/MMAL\n"
+    "# For the raspberry pi official camera, use vc.ril.camera"
+    "# Default: Not defined",
+    0,
+    CONF_OFFSET(mmalcam_name),
+    copy_string,
+    print_string
+    },
+    {
+    "mmalcam_control_params",
+    "# Camera control parameters (see raspivid/raspistill tool documentation)\n"
+    "# Default: Not defined",
+    0,
+    CONF_OFFSET(mmalcam_control_params),
+    copy_string,
+    print_string
+    },
+#endif
+    {
     "auto_brightness",
     "# Let motion regulate the brightness of a video device (default: off).\n"
     "# The auto_brightness feature uses the brightness option as its target value.\n"
@@ -456,6 +516,22 @@ config_param config_params[] = {
     "# Valid range 0-255, default 0 = disabled",
     0,
     CONF_OFFSET(hue),
+    copy_int,
+    print_int
+    },
+    {
+    "power_line_frequency",
+    "# Set the power line frequency to help cancel flicker by compensating\n"
+    "# for light intensity ripple.  (default: -1).\n"
+    "# This can help reduce power line light flicker.\n"
+    "# Valuse :\n"
+    "# do not modify the device setting       : -1\n"
+    "# V4L2_CID_POWER_LINE_FREQUENCY_DISABLED : 0\n"
+    "# V4L2_CID_POWER_LINE_FREQUENCY_50HZ     : 1\n"
+    "# V4L2_CID_POWER_LINE_FREQUENCY_60HZ     : 2\n"
+    "# V4L2_CID_POWER_LINE_FREQUENCY_AUTO     : 3",
+    0,
+    CONF_OFFSET(power_line_frequency),
     copy_int,
     print_int
     },
@@ -667,6 +743,16 @@ config_param config_params[] = {
     print_int
     },
     {
+    "camera_id",
+    "Id used to label the camera when inserting data into SQL or saving the\n"
+    "camera image to disk.  This is better than using thread ID so that there\n"
+    "always is a consistent label\n",
+    0,
+    CONF_OFFSET(camera_id),
+    copy_int,
+    print_int
+    },
+    {
     "picture_type",
     "# Type of output images\n"
     "# Valid values: jpeg, ppm (default: jpeg)",
@@ -750,19 +836,21 @@ config_param config_params[] = {
     "# flv - gives you a flash video with extension .flv\n"
     "# ffv1 - FF video codec 1 for Lossless Encoding ( experimental )\n"
     "# mov - QuickTime ( testing )\n"
-    "# ogg - Ogg/Theora ( testing )",
+    "# ogg - Ogg/Theora ( testing )\n"
+    "# mp4 - MPEG-4 Part 14 H264 encoding\n"
+    "# mkv - Matroska H264 encoding\n"
+    "# hevc - H.265 / HEVC (High Efficiency Video Coding)",
     0,
     CONF_OFFSET(ffmpeg_video_codec),
     copy_string,
     print_string
     },
     {
-    "ffmpeg_deinterlace",
-    "# Use ffmpeg to deinterlace video. Necessary if you use an analog camera\n"
-    "# and see horizontal combing on moving objects in video or pictures.\n"
-    "# (default: off)",
+    "ffmpeg_duplicate_frames",
+    "# True to duplicate frames to achieve \"framerate\" fps, but enough\n"
+    "duplicated frames and the video appears to freeze once a second.",
     0,
-    CONF_OFFSET(ffmpeg_deinterlace),
+    CONF_OFFSET(ffmpeg_duplicate_frames),
     copy_bool,
     print_bool
     },
@@ -820,7 +908,7 @@ config_param config_params[] = {
     "# Text Display\n"
     "# %Y = year, %m = month, %d = date,\n"
     "# %H = hour, %M = minute, %S = second, %T = HH:MM:SS,\n"
-    "# %v = event, %q = frame number, %t = thread (camera) number,\n"
+    "# %v = event, %q = frame number, %t = camera id,\n"
     "# %D = changed pixels, %N = noise level, \\n = new line,\n"
     "# %i and %J = width and height of motion area,\n"
     "# %K and %L = X and Y coordinates of motion center\n"
@@ -869,7 +957,7 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-     {
+    {
     "text_changes",
     "# Draw the number of changed pixed on the images (default: off)\n"
     "# Will normally be set to off except when you setup and adjust the motion settings\n"
@@ -918,7 +1006,7 @@ config_param config_params[] = {
     "# you can use conversion specifiers\n"
     "# %Y = year, %m = month, %d = date,\n"
     "# %H = hour, %M = minute, %S = second,\n"
-    "# %v = event, %q = frame number, %t = thread (camera) number,\n"
+    "# %v = event, %q = frame number, %t = camera id,\n"
     "# %D = changed pixels, %N = noise level,\n"
     "# %i and %J = width and height of motion area,\n"
     "# %K and %L = X and Y coordinates of motion center\n"
@@ -1071,6 +1159,22 @@ config_param config_params[] = {
     CONF_OFFSET(stream_authentication),
     copy_string,
     print_string
+    },
+    {
+    "stream_preview_scale",
+    "# Percentage to scale the preview stream image (default: 25)\n",
+    0,
+    CONF_OFFSET(stream_preview_scale),
+    copy_int,
+    print_int
+    },
+    {
+    "stream_preview_newline",
+    "# Have stream preview image start on a new line (default: no)\n",
+    0,
+    CONF_OFFSET(stream_preview_newline),
+    copy_bool,
+    print_bool
     },
     {
     "webcontrol_port",
@@ -1482,20 +1586,14 @@ config_param config_params[] = {
     copy_int,
     print_int
     },
-#ifdef HAVE_SQLITE3
     {
-    "sqlite3_db",
-    "\n############################################################\n"
-    "# Database Options For SQLite3\n"
-    "############################################################\n\n"
-    "# SQLite3 database to log to (default: not defined)",
+    "database_busy_timeout",
+    "# Database wait for unlock time (default: 0)",
     0,
-    CONF_OFFSET(sqlite3_db),
-    copy_string,
-    print_string
+    CONF_OFFSET(database_busy_timeout),
+    copy_int,
+    print_int
     },
-#endif /* HAVE_SQLITE3 */
-
 #endif /* defined(HAVE_MYSQL) || defined(HAVE_PGSQL) || defined(HAVE_SQLITE3) */
     {
     "video_pipe",
@@ -1519,17 +1617,42 @@ config_param config_params[] = {
     print_string
     },
     {
+    "camera",
+    "\n##############################################################\n"
+    "# Camera config files - One for each camera.\n"
+    "# Except if only one camera - You only need this config file.\n"
+    "# If you have more than one camera you MUST define one camera\n"
+    "# config file for each camera in addition to this config file.\n"
+    "##############################################################\n",
+    1,
+    0,
+    config_camera,
+    print_camera
+    },
+    {
     "thread",
     "\n##############################################################\n"
-    "# Thread config files - One for each camera.\n"
+    "# Deprecated use camera instead of thread.\n"
+    "# Camera config files - One for each camera.\n"
     "# Except if only one camera - You only need this config file.\n"
-    "# If you have more than one camera you MUST define one thread\n"
+    "# If you have more than one camera you MUST define one camera\n"
     "# config file for each camera in addition to this config file.\n"
     "##############################################################\n",
     1,
     0,
     config_thread,
     print_thread
+    },
+    /* using a conf.d style camera addition */
+    {
+    "camera_dir",
+    "\n##############################################################\n"
+    "# Camera config directory - One for each camera.\n"
+    "##############################################################\n",
+    1,
+    CONF_OFFSET(camera_dir),
+    read_camera_dir,
+    print_string
     },
     { NULL, NULL, 0, 0, NULL, NULL }
 };
@@ -1551,11 +1674,14 @@ static void conf_cmdline(struct context *cnt, int thread)
      * if necessary. This is accomplished by calling mystrcpy();
      * see this function for more information.
      */
-    while ((c = getopt(conf->argc, conf->argv, "c:d:hmns?p:k:l:")) != EOF)
+    while ((c = getopt(conf->argc, conf->argv, "bc:d:hmns?p:k:l:")) != EOF)
         switch (c) {
         case 'c':
             if (thread == -1)
                 strcpy(cnt->conf_filename, optarg);
+            break;
+        case 'b':
+            cnt->daemon = 1;
             break;
         case 'n':
             cnt->daemon = 0;
@@ -1569,20 +1695,26 @@ static void conf_cmdline(struct context *cnt, int thread)
                 cnt->log_level = (unsigned int)atoi(optarg);
             break;
         case 'k':
-            if (thread == -1)
-                strcpy(cnt->log_type_str, optarg);
+            if (thread == -1) {
+                strncpy(cnt->log_type_str, optarg, sizeof(cnt->log_type_str) - 1);
+                cnt->log_type_str[sizeof(cnt->log_type_str) - 1] = '\0';
+            }
             break;
         case 'p':
-            if (thread == -1)
-                strcpy(cnt->pid_file, optarg);
+            if (thread == -1) {
+                strncpy(cnt->pid_file, optarg, sizeof(cnt->pid_file) - 1);
+                cnt->pid_file[sizeof(cnt->pid_file) - 1] = '\0';
+            }
             break;
         case 'l':
-            if (thread == -1)
-                strcpy(cnt->log_file, optarg);
+            if (thread == -1) {
+                strncpy(cnt->log_file, optarg, sizeof(cnt->log_file) - 1);
+                cnt->log_file[sizeof(cnt->log_file) - 1] = '\0';
+            }
             break;
         case 'm':
             cnt->pause = 1;
-            break;    
+            break;
         case 'h':
         case '?':
         default:
@@ -1630,6 +1762,7 @@ struct context **conf_cmdparse(struct context **cnt, const char *cmd, const char
              * If the option is an int, copy_int is called.
              * If the option is a string, copy_string is called.
              * If the option is a thread, config_thread is called.
+             * If the option is a camera, config_camera is called.
              * The arguments to the function are:
              *  cnt  - a pointer to the context structure.
              *  arg1 - a pointer to the new option value (represented as string).
@@ -1677,7 +1810,7 @@ static struct context **conf_process(struct context **cnt, FILE *fp)
 
             /* Trim white space and any CR or LF at the end of the line. */
             end = line + strlen(line) - 1; /* Point to the last non-null character in the string. */
-            while (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')
+            while (end >= line && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r'))
                 end--;
 
             *(end+1) = '\0';
@@ -1748,7 +1881,7 @@ void conf_print(struct context **cnt)
         MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Writing config file to %s",
                    cnt[thread]->conf_filename);
 
-        conffile = myfopen(cnt[thread]->conf_filename, "w", 0);
+        conffile = myfopen(cnt[thread]->conf_filename, "w");
 
         if (!conffile)
             continue;
@@ -1784,7 +1917,7 @@ void conf_print(struct context **cnt)
                     fprintf(conffile, "%s\n", val);
 
                     if (strlen(val) == 0)
-                        fprintf(conffile, "; thread /usr/local/etc/thread1.conf\n");
+                        fprintf(conffile, "; camera %s/motion/camera1.conf\n", sysconfdir);
 
                     free(val);
                 } else if (thread == 0) {
@@ -1868,8 +2001,9 @@ struct context **conf_load(struct context **cnt)
     conf_cmdline(cnt[0], -1);
 
     if (cnt[0]->conf_filename[0]) { /* User has supplied filename on Command-line. */
-        strcpy(filename, cnt[0]->conf_filename);
-        fp = fopen (filename, "r");
+      strncpy(filename, cnt[0]->conf_filename, PATH_MAX-1);
+      filename[PATH_MAX-1] = '\0';
+      fp = fopen (filename, "r");
     }
 
     if (!fp) {  /* Command-line didn't work, try current dir. */
@@ -1894,7 +2028,7 @@ struct context **conf_load(struct context **cnt)
         fp = fopen(filename, "r");
 
         if (!fp) {
-            snprintf(filename, PATH_MAX, "%s/motion.conf", sysconfdir);
+            snprintf(filename, PATH_MAX, "%s/motion/motion.conf", sysconfdir);
             fp = fopen(filename, "r");
 
             if (!fp) /* There is no config file.... use defaults. */
@@ -1905,11 +2039,12 @@ struct context **conf_load(struct context **cnt)
 
     /* Now we process the motion.conf config file and close it. */
     if (fp) {
-        strcpy(cnt[0]->conf_filename, filename);
-        MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Processing thread 0 - config file %s",
-                   filename);
-        cnt = conf_process(cnt, fp);
-        myfclose(fp);
+      strncpy(cnt[0]->conf_filename, filename, sizeof(cnt[0]->conf_filename) - 1);
+      cnt[0]->conf_filename[sizeof(cnt[0]->conf_filename) - 1] = '\0';
+      MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Processing thread 0 - config file %s",
+		 filename);
+      cnt = conf_process(cnt, fp);
+      myfclose(fp);
     } else {
         MOTION_LOG(CRT, TYPE_ALL, NO_ERRNO, "%s: Not config file to process using default values");
     }
@@ -2152,7 +2287,7 @@ char *mystrdup(const char *from)
     } else {
         stringlength = strlen(from);
         stringlength = (stringlength < PATH_MAX ? stringlength : PATH_MAX);
-        tmp = (char *)mymalloc(stringlength + 1);
+        tmp = mymalloc(stringlength + 1);
         strncpy(tmp, from, stringlength);
 
         /*
@@ -2250,8 +2385,14 @@ static const char *print_int(struct context **cnt, char **str ATTRIBUTE_UNUSED,
     return retval;
 }
 
-
 static const char *print_thread(struct context **cnt, char **str,
+                                int parm ATTRIBUTE_UNUSED, unsigned int threadnr)
+{
+    MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "thread config option deprecated use camera");
+    return print_camera(cnt, str, parm, threadnr);
+}
+
+static const char *print_camera(struct context **cnt, char **str,
                                 int parm ATTRIBUTE_UNUSED, unsigned int threadnr)
 {
     char *retval;
@@ -2265,8 +2406,8 @@ static const char *print_thread(struct context **cnt, char **str,
 
     while (cnt[++i]) {
         retval = myrealloc(retval, strlen(retval) + strlen(cnt[i]->conf_filename) + 10,
-                           "print_thread");
-        sprintf(retval + strlen(retval), "thread %s\n", cnt[i]->conf_filename);
+                           "print_camera");
+        sprintf(retval + strlen(retval), "camera %s\n", cnt[i]->conf_filename);
     }
 
     *str = retval;
@@ -2275,9 +2416,63 @@ static const char *print_thread(struct context **cnt, char **str,
 }
 
 /**
- * config_thread
+ * config_camera_dir
+ *     Read the directory finding all *.conf files in the path
+ *     when calls config_camera
+ */
+
+static struct context **read_camera_dir(struct context **cnt, const char *str,
+                                            int val ATTRIBUTE_UNUSED)
+{
+    DIR *dp;
+    struct dirent *ep;
+    size_t name_len;
+
+    char conf_file[PATH_MAX];
+
+    dp = opendir(str);
+    if (dp != NULL)
+    {
+        while( (ep = readdir(dp)) )
+        {
+            name_len = strlen(ep->d_name);
+            if (name_len > strlen(EXTENSION) &&
+                    (strncmp(EXTENSION,
+                                (ep->d_name + name_len - strlen(EXTENSION)),
+                                strlen(EXTENSION)) == 0
+                    )
+                )
+            {
+                memset(conf_file, '\0', sizeof(conf_file));
+                snprintf(conf_file, sizeof(conf_file) - 1, "%s/%s",
+                            str, ep->d_name);
+                MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO,
+                    "%s: Processing config file %s", conf_file );
+                cnt = config_camera(cnt, conf_file, 0);
+            }
+        }
+        closedir(dp);
+    }
+    else
+    {
+        MOTION_LOG(ALR, TYPE_ALL, SHOW_ERRNO, "%s: Camera directory config "
+                    "%s not found", str);
+    }
+
+    return cnt;
+}
+
+static struct context **config_thread(struct context **cnt, const char *str,
+                                      int val ATTRIBUTE_UNUSED)
+{
+    MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "thread config option deprecated use camera");
+    return config_camera(cnt, str, val);
+}
+
+/**
+ * config_camera
  *      Is called during initial config file loading each time Motion
- *      finds a thread option in motion.conf
+ *      finds a camera option in motion.conf
  *      The size of the context array is increased and the main context's values are
  *      copied to the new thread.
  *
@@ -2286,7 +2481,7 @@ static const char *print_thread(struct context **cnt, char **str,
  *      val  - is not used. It is defined to be function header compatible with
  *            copy_int, copy_bool and copy_string.
  */
-static struct context **config_thread(struct context **cnt, const char *str,
+static struct context **config_camera(struct context **cnt, const char *str,
                                       int val ATTRIBUTE_UNUSED)
 {
     int i;
@@ -2298,7 +2493,7 @@ static struct context **config_thread(struct context **cnt, const char *str,
     fp = fopen(str, "r");
 
     if (!fp) {
-        MOTION_LOG(ALR, TYPE_ALL, SHOW_ERRNO, "%s: Thread config file %s not found",
+        MOTION_LOG(ALR, TYPE_ALL, SHOW_ERRNO, "%s: Camera config file %s not found",
                    str);
         return cnt;
     }
@@ -2314,7 +2509,7 @@ static struct context **config_thread(struct context **cnt, const char *str,
      * First thread is 0 so the number of threads is i + 1
      * plus an extra for the NULL pointer. This gives i + 2
      */
-    cnt = myrealloc(cnt, sizeof(struct context *) * (i + 2), "config_thread");
+    cnt = myrealloc(cnt, sizeof(struct context *) * (i + 2), "config_camera");
 
     /* Now malloc space for an additional context structure for thread nr. i */
     cnt[i] = mymalloc(sizeof(struct context));
@@ -2336,7 +2531,7 @@ static struct context **config_thread(struct context **cnt, const char *str,
 
     /* Process the thread's config file and notify user on console. */
     strcpy(cnt[i]->conf_filename, str);
-    MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Processing config file %s",
+    MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, "%s: Processing camera config file %s",
                str);
     conf_process(cnt + i, fp);
 
@@ -2354,14 +2549,15 @@ static struct context **config_thread(struct context **cnt, const char *str,
  */
 static void usage()
 {
-    printf("motion Version "VERSION", Copyright 2000-2005 Jeroen Vreeken/Folkert van Heusden/Kenneth Lavrsen\n");
+    printf("motion Version "VERSION", Copyright 2000-2016 Jeroen Vreeken/Folkert van Heusden/Kenneth Lavrsen/Motion-Project maintainers\n");
     printf("\nusage:\tmotion [options]\n");
     printf("\n\n");
     printf("Possible options:\n\n");
+    printf("-b\t\t\tRun in background (daemon) mode.\n");
     printf("-n\t\t\tRun in non-daemon mode.\n");
     printf("-s\t\t\tRun in setup mode.\n");
     printf("-c config\t\tFull path and filename of config file.\n");
-    printf("-d level\t\tLog level (1-9) (EMR, ALR, CRT, ERR, WRN, NTC, ERR, DBG, ALL). default: 6 / NTC.\n");
+    printf("-d level\t\tLog level (1-9) (EMG, ALR, CRT, ERR, WRN, NTC, INF, DBG, ALL). default: 6 / NTC.\n");
     printf("-k type\t\t\tType of log (COR, STR, ENC, NET, DBL, EVT, TRK, VID, ALL). default: ALL.\n");
     printf("-p process_id_file\tFull path and filename of process id file (pid file).\n");
     printf("-l log file \t\tFull path and filename of log file.\n");
@@ -2369,6 +2565,6 @@ static void usage()
     printf("-h\t\t\tShow this screen.\n");
     printf("\n");
     printf("Motion is configured using a config file only. If none is supplied,\n");
-    printf("it will read motion.conf from current directory, ~/.motion or %s.\n", sysconfdir);
+    printf("it will read motion.conf from current directory, ~/.motion or %s/motion.\n", sysconfdir);
     printf("\n");
 }

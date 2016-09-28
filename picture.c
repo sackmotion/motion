@@ -177,7 +177,7 @@ static void put_direntry(struct tiff_writing *into, const char *data, unsigned l
     } else {
 	    /* Longer entries are stored out-of-line */
 	    unsigned offset = into->data_offset;
-	
+
         while ((offset & 0x03) != 0) {  /* Alignment */
 	        into->base[offset] = 0;
 	        offset ++;
@@ -324,7 +324,7 @@ static void put_jpeg_exif(j_compress_ptr cinfo,
 
     JOCTET *marker = malloc(buffer_size);
     memcpy(marker, exif_marker_start, 14); /* EXIF and TIFF headers */
-    
+
     struct tiff_writing writing = (struct tiff_writing) {
 	.base = marker + 6, /* base address for intra-TIFF offsets */
 	.buf = marker + 14, /* current write position */
@@ -338,10 +338,10 @@ static void put_jpeg_exif(j_compress_ptr cinfo,
 
     if (description)
 	    put_stringentry(&writing, TIFF_TAG_IMAGE_DESCRIPTION, description, 0);
-    
+
     if (datetime)
 	    put_stringentry(&writing, TIFF_TAG_DATETIME, datetime, 1);
-    
+
     if (ifd1_tagcount > 0) {
 	    /* Offset of IFD1 - TIFF header + IFD0 size. */
 	    unsigned ifd1_offset = 8 + 6 + ( 12 * ifd0_tagcount );
@@ -369,10 +369,10 @@ static void put_jpeg_exif(j_compress_ptr cinfo,
 
 	    if (datetime)
 	        put_stringentry(&writing, EXIF_TAG_ORIGINAL_DATETIME, datetime, 1);
-	    
+
         if (box)
 	        put_subjectarea(&writing, box);
-	    
+
         if (subtime)
 	        put_stringentry(&writing, EXIF_TAG_ORIGINAL_DATETIME_SS, subtime, 0);
 
@@ -392,9 +392,8 @@ static void put_jpeg_exif(j_compress_ptr cinfo,
     /* EXIF data lives in a JPEG APP1 marker */
     jpeg_write_marker(cinfo, JPEG_APP0 + 1, marker, marker_len);
 
-    if (description)
-	    free(description);
-    
+    free(description);
+
     free(marker);
 }
 
@@ -453,21 +452,30 @@ static int put_jpeg_yuv420p_memory(unsigned char *dest_image, int image_size,
 
     jpeg_set_quality(&cinfo, quality, TRUE);
     cinfo.dct_method = JDCT_FASTEST;
-
+    
     _jpeg_mem_dest(&cinfo, dest_image, image_size);  // Data written to mem
+    
 
     jpeg_start_compress(&cinfo, TRUE);
 
     put_jpeg_exif(&cinfo, cnt, tm, box);
-
+    
+    /* If the image is not a multiple of 16, this overruns the buffers
+     * we'll just pad those last bytes with zeros
+     */
     for (j = 0; j < height; j += 16) {
         for (i = 0; i < 16; i++) {
-            y[i] = input_image + width * (i + j);
-
-            if (i % 2 == 0) {
-                cb[i / 2] = input_image + width * height + width / 2 * ((i + j) /2);
-                cr[i / 2] = input_image + width * height + width * height / 4 + width / 2 * ((i + j) / 2);
-            }
+            if ((width * (i + j)) < (width * height)) {
+                y[i] = input_image + width * (i + j);
+                if (i % 2 == 0) {
+                    cb[i / 2] = input_image + width * height + width / 2 * ((i + j) /2);
+                    cr[i / 2] = input_image + width * height + width * height / 4 + width / 2 * ((i + j) / 2);                
+                }
+            } else {
+                y[i] = 0x00;
+                cb[i] = 0x00;
+                cr[i] = 0x00;
+            }    
         }
         jpeg_write_raw_data(&cinfo, data, 16);
     }
@@ -595,12 +603,18 @@ static void put_jpeg_yuv420p_file(FILE *fp,
 
     for (j = 0; j < height; j += 16) {
         for (i = 0; i < 16; i++) {
-            y[i] = image + width * (i + j);
-            if (i % 2 == 0) {
-                cb[i / 2] = image + width * height + width / 2 * ((i + j) / 2);
-                cr[i / 2] = image + width * height + width * height / 4 + width / 2 * ((i + j) / 2);
-            }
-        }
+            if ((width * (i + j)) < (width * height)) {
+                y[i] = image + width * (i + j);
+                if (i % 2 == 0) {
+                    cb[i / 2] = image + width * height + width / 2 * ((i + j) / 2);
+                    cr[i / 2] = image + width * height + width * height / 4 + width / 2 * ((i + j) / 2);
+                }
+            } else {
+                y[i] = 0x00;
+                cb[i] = 0x00;
+                cr[i] = 0x00;
+            }        
+        }    
         jpeg_write_raw_data(&cinfo, data, 16);
     }
 
@@ -679,7 +693,6 @@ static void put_ppm_bgr24_file(FILE *picture, unsigned char *image, int width, i
     unsigned char *u = image + width * height;
     unsigned char *v = u + (width * height) / 4;
     int r, g, b;
-    int warningkiller;
     unsigned char rgb[3];
 
     /*
@@ -722,7 +735,7 @@ static void put_ppm_bgr24_file(FILE *picture, unsigned char *image, int width, i
                 v++;
             }
             /* ppm is rgb not bgr */
-            warningkiller = fwrite(rgb, 1, 3, picture);
+            fwrite(rgb, 1, 3, picture);
         }
         if (y & 1) {
             u -= width / 2;
@@ -890,7 +903,7 @@ int put_picture_memory(struct context *cnt, unsigned char* dest_image, int image
         return put_jpeg_grey_memory(dest_image, image_size, image,
                                     cnt->imgs.width, cnt->imgs.height, quality);
     default:
-        MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "%s: Unknow image type %d",
+        MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "%s: Unknown image type %d",
                    cnt->imgs.type);
     }
 
@@ -910,7 +923,7 @@ void put_picture_fd(struct context *cnt, FILE *picture, unsigned char *image, in
             put_jpeg_grey_file(picture, image, cnt->imgs.width, cnt->imgs.height, quality);
             break;
         default:
-            MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "%s: Unknow image type %d",
+            MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "%s: Unknown image type %d",
                        cnt->imgs.type);
         }
     }
@@ -921,7 +934,7 @@ void put_picture(struct context *cnt, char *file, unsigned char *image, int ftyp
 {
     FILE *picture;
 
-    picture = myfopen(file, "w", BUFSIZE_1MEG);
+    picture = myfopen(file, "w");
     if (!picture) {
         /* Report to syslog - suggest solution if the problem is access rights to target dir. */
         if (errno ==  EACCES) {
@@ -950,9 +963,9 @@ void put_picture(struct context *cnt, char *file, unsigned char *image, int ftyp
  */
 unsigned char *get_pgm(FILE *picture, int width, int height)
 {
-    int x = 0 , y = 0, maxval;
+    int x, y, mask_width, mask_height, maxval;
     char line[256];
-    unsigned char *image;
+    unsigned char *image, *resized_image;
 
     line[255] = 0;
 
@@ -973,15 +986,9 @@ unsigned char *get_pgm(FILE *picture, int width, int height)
         if (!fgets(line, 255, picture))
             return NULL;
 
-    /* Check size */
-    if (sscanf(line, "%d %d", &x, &y) != 2) {
+    /* Read image size */
+    if (sscanf(line, "%d %d", &mask_width, &mask_height) != 2) {
         MOTION_LOG(ERR, TYPE_ALL, SHOW_ERRNO, "%s: Failed reading size in pgm file");
-        return NULL;
-    }
-
-    if (x != width || y != height) {
-        MOTION_LOG(ERR, TYPE_ALL, SHOW_ERRNO, "%s: Wrong image size %dx%d should be %dx%d",
-                   x, y, width, height);
         return NULL;
     }
 
@@ -998,15 +1005,35 @@ unsigned char *get_pgm(FILE *picture, int width, int height)
 
     /* Read data */
 
-    image = mymalloc(width * height);
+    image = mymalloc(mask_width * mask_height);
 
-    for (y = 0; y < height; y++) {
-        if ((int)fread(&image[y * width], 1, width, picture) != width)
+    for (y = 0; y < mask_height; y++) {
+        if ((int)fread(&image[y * mask_width], 1, mask_width, picture) != mask_width)
             MOTION_LOG(ERR, TYPE_ALL, SHOW_ERRNO, "%s: Failed reading image data from pgm file");
 
-        for (x = 0; x < width; x++)
-            image[y * width + x] = (int)image[y * width + x] * 255 / maxval;
+        for (x = 0; x < mask_width; x++)
+            image[y * mask_width + x] = (int)image[y * mask_width + x] * 255 / maxval;
 
+    }
+
+    /* Resize mask if required */
+    if (mask_width != width || mask_height != height) {
+        MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "%s: The mask file specified is not the same size as image from camera.");
+        MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO, "%s: Attempting to resize mask image from %dx%d to %dx%d",
+                   mask_width, mask_height, width, height);
+
+        resized_image = mymalloc(width * height);
+
+        for (y = 0; y < height; y++) {
+            for (x = 0; x < width; x++) {
+                resized_image[y * width + x] = image[
+                        (mask_height - 1) * y / (height - 1) * mask_width + 
+                        (mask_width  - 1) * x / (width  - 1)];
+            }
+        }
+
+        free(image);
+        image = resized_image;
     }
 
     return image;
@@ -1024,7 +1051,7 @@ void put_fixed_mask(struct context *cnt, const char *file)
 {
     FILE *picture;
 
-    picture = myfopen(file, "w", BUFSIZE_1MEG);
+    picture = myfopen(file, "w");
     if (!picture) {
         /* Report to syslog - suggest solution if the problem is access rights to target dir. */
         if (errno ==  EACCES) {

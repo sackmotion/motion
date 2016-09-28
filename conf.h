@@ -15,21 +15,24 @@
 #ifndef _INCLUDE_CONF_H
 #define _INCLUDE_CONF_H
 
-/* 
+/*
  * More parameters may be added later.
  */
 struct config {
+    const char *camera_name;
     unsigned int log_level;
     char *log_type_str;
     char *log_file;
     int setup_mode;
     int width;
     int height;
+    int camera_id;
     int quality;
     int rotate_deg;
     int max_changes;
     int threshold_tune;
     const char *output_pictures;
+    int ffmpeg_duplicate_frames;
     int motion_img;
     int emulate_motion;
     int event_gap;
@@ -53,6 +56,7 @@ struct config {
     int contrast;
     int saturation;
     int hue;
+    int power_line_frequency;
     int roundrobin_frames;
     int roundrobin_skip;
     int pre_capture;
@@ -62,7 +66,6 @@ struct config {
     int ffmpeg_output_debug;
     int ffmpeg_bps;
     int ffmpeg_vbr;
-    int ffmpeg_deinterlace;
     const char *ffmpeg_video_codec;
 #ifdef HAVE_SDL
     int sdl_threadnr;
@@ -76,6 +79,8 @@ struct config {
     int stream_limit;
     int stream_auth_method;
     const char *stream_authentication;
+    int stream_preview_scale;
+    int stream_preview_newline;
     int webcontrol_port;
     int webcontrol_localhost;
     int webcontrol_html_output;
@@ -83,8 +88,8 @@ struct config {
     unsigned long frequency;
     int tuner_number;
     int timelapse;
-    const char *timelapse_mode; 
-#if (defined(BSD))
+    const char *timelapse_mode;
+#if (defined(BSD) || defined(__FreeBSD_kernel__))
     const char *tuner_device;
 #endif
     const char *video_device;
@@ -109,7 +114,7 @@ struct config {
     const char *database_host;
     const char *database_user;
     const char *database_password;
-    const char *sqlite3_db;
+    int database_busy_timeout;
     int database_port;
     char *on_picture_save;
     char *on_area_detected;
@@ -123,6 +128,11 @@ struct config {
     const char *netcam_keepalive;
     const char *netcam_proxy;
     unsigned int netcam_tolerant_check;
+    unsigned int rtsp_uses_tcp;
+#ifdef HAVE_MMAL
+    const char *mmalcam_name;
+    const char *mmalcam_control_params;
+#endif
     int text_changes;
     const char *text_left;
     const char *text_right;
@@ -130,6 +140,7 @@ struct config {
     int text_double;
     const char *despeckle_filter;
     const char *area_detect;
+    const char *camera_dir;
     int minimum_motion_frames;
     const char *exif_text;
     char *pid_file;
@@ -137,8 +148,8 @@ struct config {
     char **argv;
 };
 
-/** 
- * typedef for a param copy function. 
+/**
+ * typedef for a param copy function.
  */
 typedef struct context ** (* conf_copy_func)(struct context **, const char *, int);
 typedef const char *(* conf_print_func)(struct context **, char **, int, unsigned int);
@@ -153,7 +164,7 @@ typedef struct {
     int conf_value;                   /* pointer to a field in struct context     */
     conf_copy_func  copy;             /* a function to set the value in 'config'  */
     conf_print_func print;            /* a function to output the value to a file */
-} config_param; 
+} config_param;
 
 extern config_param config_params[];
 

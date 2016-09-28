@@ -179,6 +179,10 @@ static void* handle_basic_auth(void* param)
         "Pragma: no-cache\r\n"
         "WWW-Authenticate: Basic realm=\""STREAM_REALM"\"\r\n\r\n";
 
+#ifdef HAVE_PTHREAD_SETNAME_NP
+    pthread_setname_np(pthread_self(), "handle_basic_auth");
+#endif
+
     pthread_mutex_lock(&stream_auth_mutex);
     p->thread_count++;
     pthread_mutex_unlock(&stream_auth_mutex);
@@ -205,7 +209,7 @@ static void* handle_basic_auth(void* param)
         char *userpass = NULL;
         size_t auth_size = strlen(p->conf->stream_authentication);
 
-        authentication = (char *) mymalloc(BASE64_LENGTH(auth_size) + 1);
+        authentication = mymalloc(BASE64_LENGTH(auth_size) + 1);
         userpass = mymalloc(auth_size + 4);
         /* base64_encode can read 3 bytes after the end of the string, initialize it. */
         memset(userpass, 0, auth_size + 4);
@@ -242,7 +246,8 @@ static void* handle_basic_auth(void* param)
     pthread_exit(NULL);
 
 Error:
-    write(p->sock, request_auth_response_template, strlen (request_auth_response_template));
+    if (write(p->sock, request_auth_response_template, strlen (request_auth_response_template)) < 0)
+        MOTION_LOG(DBG, TYPE_STREAM, SHOW_ERRNO, "%s: write failure 1:handle_basic_auth");
 
 Invalid_Request:
     close(p->sock);
@@ -408,26 +413,32 @@ static void* handle_md5_digest(void* param)
         "Pragma: no-cache\r\n"
         "WWW-Authenticate: Digest";
     static const char *auth_failed_html_template=
-        "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n"
-        "<HTML><HEAD>\r\n"
-        "<TITLE>401 Authorization Required</TITLE>\r\n"
-        "</HEAD><BODY>\r\n"
-        "<H1>Authorization Required</H1>\r\n"
-        "This server could not verify that you are authorized to access the document "
+        "<!DOCTYPE html>\n"
+        "<html>\n"
+        "<head><title>401 Authorization Required</title></head>\n"
+        "<body>\n"
+        "<h1>Authorization Required</h1>\n"
+        "<p>This server could not verify that you are authorized to access the document "
         "requested.  Either you supplied the wrong credentials (e.g., bad password), "
-        "or your browser doesn't understand how to supply the credentials required.\r\n"
-        "</BODY></HTML>\r\n";
+        "or your browser doesn't understand how to supply the credentials required.</p>\n"
+        "</body>\n"
+        "</html>\n";
     static const char *internal_error_template=
         "HTTP/1.0 500 Internal Server Error\r\n"
         "Server: Motion/"VERSION"\r\n"
         "Content-Type: text/html\r\n"
         "Connection: Close\r\n\r\n"
-        "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n"
-        "<HTML><HEAD>\r\n"
-        "<TITLE>500 Internal Server Error</TITLE>\r\n"
-        "</HEAD><BODY>\r\n"
-        "<H1>500 Internal Server Error</H1>\r\n"
-        "</BODY></HTML>\r\n";
+        "<!DOCTYPE html>\n"
+        "<html>\n"
+        "<head><title>500 Internal Server Error</title></head>\n"
+        "<body>\n"
+        "<h1>500 Internal Server Error</h1>\n"
+        "</body>\n"
+        "</html>\n";
+
+#ifdef HAVE_PTHREAD_SETNAME_NP
+    pthread_setname_np(pthread_self(), "handle_md5_digest");
+#endif
 
     pthread_mutex_lock(&stream_auth_mutex);
     p->thread_count++;
@@ -569,8 +580,10 @@ Error:
                 "Content-Length: %Zu\r\n\r\n",
                 request_auth_response_template, server_nonce,
                 KEEP_ALIVE_TIMEOUT, strlen(auth_failed_html_template));
-        write(p->sock, buffer, strlen(buffer));
-        write(p->sock, auth_failed_html_template, strlen(auth_failed_html_template));
+        if (write(p->sock, buffer, strlen(buffer)) < 0)
+            MOTION_LOG(DBG, TYPE_STREAM, SHOW_ERRNO, "%s: write failure 1:handle_md5_digest");
+        if (write(p->sock, auth_failed_html_template, strlen(auth_failed_html_template)) < 0)
+            MOTION_LOG(DBG, TYPE_STREAM, SHOW_ERRNO, "%s: write failure 2:handle_md5_digest");
     }
 
     // OK - Access
@@ -581,11 +594,8 @@ Error:
         goto Error;
     }
 
-    if(server_user)
-        free(server_user);
-
-    if(server_pass)
-        free(server_pass);
+    free(server_user);
+    free(server_pass);
 
     /* Lock the mutex */
     pthread_mutex_lock(&stream_auth_mutex);
@@ -601,13 +611,11 @@ Error:
     pthread_exit(NULL);
 
 InternalError:
-    if(server_user)
-        free(server_user);
+    free(server_user);
+    free(server_pass);
 
-    if(server_pass)
-        free(server_pass);
-
-    write(p->sock, internal_error_template, strlen(internal_error_template));
+    if (write(p->sock, internal_error_template, strlen(internal_error_template)) < 0)
+      MOTION_LOG(DBG, TYPE_STREAM, SHOW_ERRNO, "%s: write failure 3:handle_md5_digest");
 
 Invalid_Request:
     close(p->sock);
@@ -694,8 +702,7 @@ static void do_client_auth(struct context *cnt, int sc)
 
 Error:
     close(sc);
-    if(handle_param)
-        free(handle_param);
+    free(handle_param);
 }
 
 /**
@@ -955,7 +962,7 @@ static void stream_add_client(struct stream *list, int sc)
                                  "Cache-Control: no-cache, private\r\n"
                                  "Pragma: no-cache\r\n"
                                  "Content-Type: multipart/x-mixed-replace; "
-                                 "boundary=--BoundaryString\r\n\r\n";
+                                 "boundary=BoundaryString\r\n\r\n";
 
     memset(new, 0, sizeof(struct stream));
     new->socket = sc;

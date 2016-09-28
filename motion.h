@@ -22,7 +22,11 @@
 #endif
 
 #ifdef HAVE_SQLITE3
+#ifdef HAVE_SQLITE3_EMBEDDED
+#include "sqlite3.h"
+#else
 #include <sqlite3.h>
+#endif
 #endif
 
 #ifdef HAVE_PGSQL
@@ -149,6 +153,7 @@
                                      */
 
 #define WATCHDOG_TMO            30   /* 30 sec max motion_loop interval */
+#define WATCHDOG_KILL          -60   /* -60 sec grace period before calling thread cancel */
 #define WATCHDOG_OFF          -127   /* Turn off watchdog, used when we wants to quit a thread */
 
 #define CONNECTION_KO           "Lost connection"
@@ -207,13 +212,15 @@
 #define UPDATE_REF_FRAME  1
 #define RESET_REF_FRAME   2
 
-#define BUFSIZE_1MEG      (1024 * 1024)
-
 /* Forward declaration, used in track.h */
 struct images;
 
 #include "track.h"
 #include "netcam.h"
+
+#ifdef HAVE_MMAL
+#include "mmalcam.h"
+#endif
 
 /* 
  * Structure to hold images information
@@ -350,6 +357,9 @@ struct context {
     struct images imgs;
     struct trackoptions track;
     struct netcam_context *netcam;
+#ifdef HAVE_MMAL
+    struct mmalcam_context *mmalcam;
+#endif
     struct image_data *current_image;        /* Pointer to a structure where the image, diffs etc is stored */
     unsigned int new_img;
 
@@ -370,6 +380,9 @@ struct context {
     volatile unsigned int restart;     /* Restart the thread when it ends */
     /* Is the motion thread running */
     volatile unsigned int running;
+    /* Is the web control thread running */
+    volatile unsigned int webcontrol_running;
+    volatile unsigned int webcontrol_finish;      /* End the thread */
     volatile int watchdog;
 
     pthread_t thread_id;
@@ -449,7 +462,7 @@ extern pthread_key_t tls_key_threadnr; /* key for thread number */
 int http_bindsock(int, int, int);
 void * mymalloc(size_t);
 void * myrealloc(void *, size_t, const char *);
-FILE * myfopen(const char *, const char *, size_t);
+FILE * myfopen(const char *, const char *);
 int myfclose(FILE *);
 size_t mystrftime(const struct context *, char *, size_t, const char *, const struct tm *, const char *, int);
 int create_path(const char *);
